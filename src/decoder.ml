@@ -69,24 +69,38 @@ let cases_ expr : cases D.decoder =
   let* expr = D.field "expr" expr in
   D.succeed { selections; expr; else_part}
 
-
 let expr : expr D.decoder =
   let tag : string D.decoder =
     D.one_of
-    [ ( "string_tag" , )
-
+    [ ( "string_tag" , D.string)
+    ; ( "list_string_tag", D.list D.string >>= function 
+      | [] -> D.fail "empty tag list"
+      | h::_ -> D.succeed h
+      )
     ]
     in
   D.fix @@ fun expr ->
-  let* tag = D.field "tag" D.string in
+  let* tag = D.field "tag" tag in
   match tag with
+  | "variable" ->
+    let* variable = variable in
+    D.succeed @@ Variable variable 
   | "constant" -> 
     let* constant = constant in
     D.succeed @@ Constant constant 
-  | Lambda of lambda
-
-  | Variable of variable 
-  | Apply of apply
-  | Cases of cases
-  | If of if_
-  | Integer of integer
+  | "lambda" -> 
+    let* lambda = lambda_ expr in
+    D.succeed @@ Lambda lambda 
+  | "apply" -> 
+    let* apply = apply_ expr in
+    D.succeed @@ Apply apply     
+  | "cases" -> 
+    let* cases = cases_ expr in
+    D.succeed @@ Cases cases     
+  | "if" -> 
+    let* if_ = if_ expr in
+    D.succeed @@ If if_     
+  | "integer" ->
+    let* integer = integer in
+    D.succeed @@ Integer integer     
+  | s -> D.fail @@ "Unknown expression tag" ^ s
