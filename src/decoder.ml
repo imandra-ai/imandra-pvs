@@ -92,6 +92,14 @@ let cases_ expr : cases D.decoder =
   let* expr = D.field "expr" expr in
   D.succeed { selections; expr; else_part}
 
+let bindings_ expr : bindings D.decoder =
+  let* expression = D.field "expression" expr in
+  let* bindings = D.field "bindings" (D.list variable) in
+  D.succeed 
+  { expression 
+  ; bindings 
+  } 
+
 let tag : string D.decoder =
   D.one_of
   [ ( "string_tag" , D.string)
@@ -101,6 +109,7 @@ let tag : string D.decoder =
     | _ -> D.fail "non-single tag list not implemented"
     )
   ]
+
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -125,7 +134,13 @@ let expr : expr D.decoder =
     D.succeed @@ If if_     
   | "integer" ->
     let* integer = integer in
-    D.succeed @@ Integer integer     
+    D.succeed @@ Integer integer
+  | "forall" ->
+    let* bindings = bindings_ expr in
+    D.succeed @@ Forall bindings
+  | "exists" ->
+    let* bindings = bindings_ expr in
+    D.succeed @@ Exists bindings
   | s -> D.fail @@ "Unknown expression tag" ^ s
 
 let typeref_w : typeref D.decoder =
@@ -176,4 +191,68 @@ let typelist : typelist D.decoder =
   let* kvs = D.key_value_pairs typelist_entry in
   let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add result k v in
   D.succeed result
+
+
+let const_decl : const_decl D.decoder = 
+  let* name = D.field "name" D.string in
+  let* type_ = D.field "type" typeref_w in
+  let* const_def = D.field "const-def" expr in
+  D.succeed
+  { name  
+  ; type_ 
+  ; const_def 
+  }
+
+let var_decl : var_decl D.decoder = 
+  let* declared_type = D.field "declared-type" (D.list typeref_w) in
+  let* id = D.field "id" D.string in
+  let* type_ = D.field "type"  typeref_w in
+  D.succeed
+  { declared_type
+  ; id 
+  ; type_ 
+  }
+
+let proof_info : proof_info D.decoder =
+  let* script = D.field "script" D.string in
+  let* status = D.field "status" D.string in
+  D.succeed
+  { script : string
+  ; status : string
+  }
+
+let formula_decl : formula_decl D.decoder  = 
+  let* label = D.field "label" D.string in
+  let* definition = D.field "definition" ( D.list expr ) in 
+  let* id = D.field "id" D.string in
+  let* proof = D.field "proof" proof_info in
+  D.succeed
+  { label : string
+  ; definition : expr list
+  ; id : string
+  ; proof : proof_info
+  }
+
+let declaration : declaration D.decoder =
+  let* tag = D.field "tag" tag in
+  match tag with
+  | "formula-decl" -> formula_decl >>= fun x -> D.succeed @@ FormulaDecl x
+  | "var-decl" -> var_decl >>= fun x -> D.succeed @@ VarDecl x
+  | "const-decl" -> const_decl >>= fun x -> D.succeed @@ ConstDecl x
+  | s -> D.fail @@ "Unknown declaration tag " ^ s
+
+let formal_type_decl : formal_type_decl D.decoder = 
+  let* name = D.field "name" D.string in
+  D.succeed { name }
+
+let theory : theory D.decoder = 
+  let* declarations = D.field "declarations" ( D.list declaration ) in
+  let* id = D.field "id" D.string in
+  let* formals = D.field "formals"  (D.list formal_type_decl) in
+  D.succeed
+  { declarations : declaration list
+  ; id : string
+  ; formals : formal_type_decl list
+  ; assuming = ()
+  }
 

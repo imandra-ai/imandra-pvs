@@ -25,6 +25,8 @@ type expr =
   | Cases of cases
   | If of if_
   | Integer of integer
+  | Forall of bindings
+  | Exists of bindings
 and apply =
   { argument : expr list
   ; operator : expr 
@@ -47,6 +49,11 @@ and selection =
   { expr : expr
   ; pattern : string
   }
+and bindings = 
+  { expression : expr
+  ; bindings : variable list
+  }
+
 
 
 type const_decl = 
@@ -66,23 +73,9 @@ type proof_info =
   ; status : string
   }
 
-type exists = 
-  { expression : expr
-  ; bindings : variable list
-  }
-
-type forall = 
-  { expression : expr
-  ; bindings : variable list
-  }
-
-type definition =
-  | Forall of forall
-  | Exists of exists
-
 type formula_decl = 
   { label : string
-  ; definition : definition list
+  ; definition : expr list
   ; id : string
   ; proof : proof_info
   }
