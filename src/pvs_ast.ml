@@ -108,8 +108,8 @@ type subtype =
   } 
 
 type functiontype = 
-  { domain : unit
-  ; range : unit
+  { domain : typeref
+  ; range : typeref
   } 
 
 type tupletype = { types : typeref list }

@@ -11,10 +11,16 @@ let typeref : typeref D.decoder = D.int
 let type_actual : type_actual D.decoder = 
   let* type_ = D.field "type" typeref in
   D.succeed { type_ }
-  
+
+let list_or_null (f : 'a D.decoder) : 'a list D.decoder =
+  D.one_of 
+  [ ("list" , D.list f)
+  ; ("null" , D.null >>= fun () -> D.succeed [])
+  ]  
+
 let constant : constant D.decoder = 
-  let* actuals = D.field "actuals" ( D.list type_actual ) in
-  let* constant_name = D.field "constant_name" D.string in
+  let* actuals = D.field "actuals" ( list_or_null type_actual ) in
+  let* constant_name = D.field "constant-name" D.string in
   let* type_ = D.field "type" typeref in
   D.succeed 
   { actuals
@@ -23,7 +29,7 @@ let constant : constant D.decoder =
   }
 
 let variable : variable D.decoder = 
-  let* variable_name = D.field "variable_name" D.string in
+  let* variable_name = D.field "variable-name" D.string in
   let* type_ = D.field "type" typeref in  
   D.succeed 
   { variable_name 
@@ -31,13 +37,30 @@ let variable : variable D.decoder =
   }
 
 let integer : integer D.decoder =
-  let* integer_value = D.field "integer_value" D.int in
+  let* integer_value = D.field "integer-value" D.int in
   D.succeed 
   { integer_value 
   }
 
+(* Workaround for arguments decoding -- it seems that there 
+are two types of argument json encodings: 
+ - a single argument expression
+ - a tuple with [["tag", "tuple"], ... rest arguments ... ]
+*)
+let arguments_ (expr : expr D.decoder) : (expr list) D.decoder =
+  D.one_of 
+  [ ("normal_expr", expr >>= fun x -> D.succeed [ x ] )
+  ; ("tuple_exprs",
+    let* tagtuple = D.index 0 (D.list D.string) in
+    if tagtuple <> ["tag"; "tuple"] then D.fail "Argument type not implemented" else
+    let* args = (D.list @@ D.maybe expr) in
+    D.succeed @@ List.filter_map (fun x -> x) args
+    )
+  ]
+
+
 let apply_ expr : apply D.decoder =
-  let* argument = D.field "argument" (D.list expr) in
+  let* argument = D.field "argument" (arguments_ expr) in
   let* operator = D.field "operator" expr in
   D.succeed 
   { argument : expr list
@@ -69,16 +92,16 @@ let cases_ expr : cases D.decoder =
   let* expr = D.field "expr" expr in
   D.succeed { selections; expr; else_part}
 
+let tag : string D.decoder =
+  D.one_of
+  [ ( "string_tag" , D.string)
+  ; ( "list_string_tag", D.list D.string >>= function 
+    | [] -> D.fail "empty tag list"
+    | h::[] -> D.succeed h
+    | _ -> D.fail "non-single tag list not implemented"
+    )
+  ]
 let expr : expr D.decoder =
-  let tag : string D.decoder =
-    D.one_of
-    [ ( "string_tag" , D.string)
-    ; ( "list_string_tag", D.list D.string >>= function 
-      | [] -> D.fail "empty tag list"
-      | h::_ -> D.succeed h
-      )
-    ]
-    in
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
   match tag with
@@ -104,3 +127,53 @@ let expr : expr D.decoder =
     let* integer = integer in
     D.succeed @@ Integer integer     
   | s -> D.fail @@ "Unknown expression tag" ^ s
+
+let typeref_w : typeref D.decoder =
+  D.one_of
+  [ ("flat int typeref", D.int)
+  ; ("typeref in dict", D.field "type" D.int)
+  ]
+
+let subtype : subtype D.decoder =
+  let* supertype = D.field "supertype" typeref_w in
+  let* predicate = D.field "predicate" expr in
+  D.succeed
+  { supertype : typeref
+  ; predicate : expr
+  } 
+
+let functiontype : functiontype D.decoder = 
+  let* domain = D.field "domain" typeref_w in
+  let* range = D.field "range" typeref_w in  
+  D.succeed
+  { domain 
+  ; range 
+  } 
+
+let tupletype : tupletype D.decoder = 
+  let trlist : typeref list D.decoder =
+    D.one_of
+    [ ("single typeref", typeref_w >>= fun x -> D.succeed [x])
+    ; ("typeref list", D.list typeref_w)
+    ]
+    in
+  let* types = D.field "types" trlist in
+  D.succeed
+  { types 
+  } 
+
+let typelist_entry : typelist_entry D.decoder = 
+  let* tag = D.field "tag" tag in
+  match tag with
+  | "subtype" -> subtype >>= fun x -> D.succeed @@ SubType x 
+  | "functiontype" -> functiontype >>= fun x -> D.succeed @@ FunctionType x 
+  | "tupletype" -> tupletype >>= fun x -> D.succeed @@ TupleType x
+  | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
+  | s -> D.fail @@ "Unknown typelist entry tag" ^ s
+
+let typelist : typelist D.decoder =
+  let result : typelist = Hashtbl.create 10 in
+  let* kvs = D.key_value_pairs typelist_entry in
+  let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add result k v in
+  D.succeed result
+
