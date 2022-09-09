@@ -1,0 +1,7 @@
+(library
+ (name pvs)
+ (public_name pvs)
+ (libraries
+  decoders-yojson
+ )
+)
