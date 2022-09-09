@@ -47,14 +47,16 @@ and cases =
   }
 and selection =
   { expr : expr
-  ; pattern : string
+  ; pattern : pattern option
   }
 and bindings = 
   { expression : expr
   ; bindings : variable list
   }
-
-
+and pattern =
+  { expr : expr
+  ; variables : variable list
+  }
 
 type const_decl = 
   { name  : string
@@ -108,12 +110,14 @@ type functiontype =
 type tupletype = { types : typeref list }
 
 type typename = { id : string }
+type dep_binding = { id : string ; type_ : typeref}
 
 type typelist_entry =
   | SubType of subtype 
   | FunctionType of functiontype 
   | TupleType of tupletype
   | TypeName of typename
+  | DepBinding of dep_binding
 
 type typelist = (string, typelist_entry) Hashtbl.t
 
