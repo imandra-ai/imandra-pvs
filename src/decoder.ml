@@ -81,14 +81,25 @@ let if_ expr : if_ D.decoder =
   let* then_ = D.field "then" expr in
   D.succeed { test; else_ ; then_ }
 
+
+let pattern_ expr : pattern D.decoder =
+  let* p1 = D.index 0 D.string in
+  let* p2 = D.index 1 ( D.index 0 D.string ) in  
+  if (p1, p2) <> ("backquote", "apply") then 
+    D.fail @@ "Not implemented pattern kind " ^ p1 ^ " - " ^ p2 
+  else
+  let* expr = D.index 1 (D.index 1 expr) in
+  let* variables = D.index 1 (D.index 2 (D.list variable )) in
+  D.succeed {expr ; variables}
+
 let selection_ expr : selection D.decoder =
+  let* pattern = D.field "pattern" ( D.maybe @@ pattern_ expr ) in
   let* expr = D.field "expr" expr in
-  let* pattern = D.field "pattern" D.string in
-  D.succeed { expr ; pattern }
+  D.succeed ( { expr ; pattern } : selection )
 
 let cases_ expr : cases D.decoder = 
   let* selections = D.field "selections" (D.list (selection_ expr)) in
-  let* else_part = D.field_opt "else-part" expr in
+  let* else_part = D.field "else-part" ( D.maybe expr) in
   let* expr = D.field "expr" expr in
   D.succeed { selections; expr; else_part}
 
@@ -184,7 +195,11 @@ let typelist_entry : typelist_entry D.decoder =
   | "functiontype" -> functiontype >>= fun x -> D.succeed @@ FunctionType x 
   | "tupletype" -> tupletype >>= fun x -> D.succeed @@ TupleType x
   | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
-  | s -> D.fail @@ "Unknown typelist entry tag" ^ s
+  | "dep-binding" -> 
+    D.field "id" D.string >>= fun id -> 
+    D.field "type" typeref_w >>= fun type_ -> 
+    D.succeed @@ DepBinding { id ; type_}
+  | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
 let typelist : typelist D.decoder =
   let result : typelist = Hashtbl.create 10 in
@@ -256,3 +271,10 @@ let theory : theory D.decoder =
   ; assuming = ()
   }
 
+let module_with_hash : module_with_hash D.decoder =
+  let* module_ = D.field "module" (D.list theory) in
+  let* type_hash = D.field "type-hash" ( D.field "entries" typelist) in
+  D.succeed
+  { module_
+  ; type_hash
+  }
