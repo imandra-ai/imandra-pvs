@@ -1,123 +1,127 @@
+(* Imandra<->PVS: JSON Decoder *)
+
 module D = Decoders_yojson.Basic.Decode
 
 let (let*) = D.(let*)
 let (>>=) = D.(>>=)
 
+open Pvs_ast
 
-open Pvs_ast 
+let typeref : typeref D.decoder = D.int
 
-let typeref : typeref D.decoder = D.int 
-
-let type_actual : type_actual D.decoder = 
+let type_actual : type_actual D.decoder =
   let* type_ = D.field "type" typeref in
   D.succeed { type_ }
 
 let list_or_null (f : 'a D.decoder) : 'a list D.decoder =
-  D.one_of 
-  [ ("list" , D.list f)
-  ; ("null" , D.null >>= fun () -> D.succeed [])
-  ]  
+  D.one_of
+    [ ("list" , D.list f);
+      ("null" , D.null >>= fun () -> D.succeed []);
+    ]
 
-let constant : constant D.decoder = 
+let constant : constant D.decoder =
   let* actuals = D.field "actuals" ( list_or_null type_actual ) in
   let* constant_name = D.field "constant-name" D.string in
   let* type_ = D.field "type" typeref in
-  D.succeed 
-  { actuals
-  ; constant_name
-  ; type_
-  }
+  D.succeed { actuals;
+              constant_name;
+              type_;
+            }
 
-let variable : variable D.decoder = 
+let variable : variable D.decoder =
   let* variable_name = D.field "variable-name" D.string in
-  let* type_ = D.field "type" typeref in  
-  D.succeed 
-  { variable_name 
-  ; type_ 
+  let* type_ = D.field "type" typeref in
+  D.succeed {
+    variable_name;
+    type_;
   }
 
 let integer : integer D.decoder =
   let* integer_value = D.field "integer-value" D.int in
-  D.succeed 
-  { integer_value 
+  D.succeed {
+    integer_value;
   }
 
-(* Workaround for arguments decoding -- it seems that there 
-are two types of argument json encodings: 
- - a single argument expression
- - a tuple with [["tag", "tuple"], ... rest arguments ... ]
-*)
-let arguments_ (expr : expr D.decoder) : (expr list) D.decoder =
-  D.one_of 
-  [ ("normal_expr", expr >>= fun x -> D.succeed [ x ] )
-  ; ("tuple_exprs",
-    let* tagtuple = D.index 0 (D.list D.string) in
-    if tagtuple <> ["tag"; "tuple"] then D.fail "Argument type not implemented" else
-    let* args = (D.list @@ D.maybe expr) in
-    D.succeed @@ List.filter_map (fun x -> x) args
-    )
-  ]
+(* Workaround for arguments decoding -- it seems that there
+   are two types of argument json encodings:
 
+   - a single argument expression
+   - a tuple with [["tag", "tuple"], ... rest arguments ... ]
+ *)
+
+let arguments_ (expr : expr D.decoder) : (expr list) D.decoder =
+  D.one_of
+    [ ("normal_expr", expr >>= fun x -> D.succeed [ x ] )
+    ; ("tuple_exprs",
+       let* tagtuple = D.index 0 (D.list D.string) in
+       if tagtuple <> ["tag"; "tuple"] then D.fail "Argument type not implemented" else
+         let* args = (D.list @@ D.maybe expr) in
+         D.succeed @@ List.filter_map (fun x -> x) args
+      )
+    ]
 
 let apply_ expr : apply D.decoder =
   let* argument = D.field "argument" (arguments_ expr) in
   let* operator = D.field "operator" expr in
-  D.succeed 
-  { argument : expr list
-  ; operator : expr 
-  }
+  D.succeed
+    { argument : expr list;
+      operator : expr;
+    }
 
-let lambda_ expr : lambda D.decoder = 
+let lambda_ expr : lambda D.decoder =
   let* expression = D.field "expression" expr in
   let* bindings = D.field "bindings" (D.list variable) in
   D.succeed (
-  { expression
-  ; bindings
-  } : lambda )
+    { expression;
+      bindings;
+    } : lambda )
 
-let if_ expr : if_ D.decoder = 
+let if_ expr : if_ D.decoder =
   let* test = D.field "test" expr in
   let* else_ = D.field "else" expr in
   let* then_ = D.field "then" expr in
   D.succeed { test; else_ ; then_ }
 
-
 let pattern_ expr : pattern D.decoder =
   let* p1 = D.index 0 D.string in
-  let* p2 = D.index 1 ( D.index 0 D.string ) in  
-  if (p1, p2) <> ("backquote", "apply") then 
-    D.fail @@ "Not implemented pattern kind " ^ p1 ^ " - " ^ p2 
+  let* p2 = D.index 1 ( D.index 0 D.string ) in
+  if (p1, p2) <> ("backquote", "apply") then
+    D.fail @@ "Not implemented pattern kind " ^ p1 ^ " - " ^ p2
   else
   let* expr = D.index 1 (D.index 1 expr) in
-  let* variables = D.index 1 (D.index 2 (D.list variable )) in
+  let* variables = D.index 1 (D.index 2 (list_or_null variable )) in
   D.succeed {expr ; variables}
 
 let selection_ expr : selection D.decoder =
-  let* pattern = D.field "pattern" ( D.maybe @@ pattern_ expr ) in
+  let* pattern = D.field "pattern" ( pattern_ expr ) in
   let* expr = D.field "expr" expr in
   D.succeed ( { expr ; pattern } : selection )
 
-let cases_ expr : cases D.decoder = 
+let cases_ expr : cases D.decoder =
   let* selections = D.field "selections" (D.list (selection_ expr)) in
   let* else_part = D.field "else-part" ( D.maybe expr) in
   let* expr = D.field "expr" expr in
-  D.succeed { selections; expr; else_part}
+  D.succeed {
+    selections;
+    expr;
+    else_part;
+  }
 
 let bindings_ expr : bindings D.decoder =
   let* expression = D.field "expression" expr in
   let* bindings = D.field "bindings" (D.list variable) in
-  D.succeed 
-  { expression 
-  ; bindings 
-  } 
+  D.succeed {
+    expression;
+    bindings;
+  }
 
 let tag : string D.decoder =
   D.one_of
-  [ ( "string_tag" , D.string)
-  ; ( "list_string_tag", D.list D.string >>= function 
-    | [] -> D.fail "empty tag list"
-    | h::[] -> D.succeed h
-    | _ -> D.fail "non-single tag list not implemented"
+  [ ( "string_tag" , D.string);
+    ( "list_string_tag", D.list D.string >>= function
+        | [] -> D.fail "empty tag list"
+        | h::[] -> D.succeed h
+        | _ -> D.fail "non-single tag list not implemented"
     )
   ]
 
@@ -127,22 +131,22 @@ let expr : expr D.decoder =
   match tag with
   | "variable" ->
     let* variable = variable in
-    D.succeed @@ Variable variable 
-  | "constant" -> 
+    D.succeed @@ Variable variable
+  | "constant" ->
     let* constant = constant in
-    D.succeed @@ Constant constant 
-  | "lambda" -> 
+    D.succeed @@ Constant constant
+  | "lambda" ->
     let* lambda = lambda_ expr in
-    D.succeed @@ Lambda lambda 
-  | "apply" -> 
+    D.succeed @@ Lambda lambda
+  | "apply" ->
     let* apply = apply_ expr in
-    D.succeed @@ Apply apply     
-  | "cases" -> 
+    D.succeed @@ Apply apply
+  | "cases" ->
     let* cases = cases_ expr in
-    D.succeed @@ Cases cases     
-  | "if" -> 
+    D.succeed @@ Cases cases
+  | "if" ->
     let* if_ = if_ expr in
-    D.succeed @@ If if_     
+    D.succeed @@ If if_
   | "integer" ->
     let* integer = integer in
     D.succeed @@ Integer integer
@@ -166,17 +170,17 @@ let subtype : subtype D.decoder =
   D.succeed
   { supertype : typeref
   ; predicate : expr
-  } 
+  }
 
-let functiontype : functiontype D.decoder = 
+let functiontype : functiontype D.decoder =
   let* domain = D.field "domain" typeref_w in
-  let* range = D.field "range" typeref_w in  
-  D.succeed
-  { domain 
-  ; range 
-  } 
+  let* range = D.field "range" typeref_w in
+  D.succeed {
+    domain;
+    range;
+  }
 
-let tupletype : tupletype D.decoder = 
+let tupletype : tupletype D.decoder =
   let trlist : typeref list D.decoder =
     D.one_of
     [ ("single typeref", typeref_w >>= fun x -> D.succeed [x])
@@ -184,20 +188,18 @@ let tupletype : tupletype D.decoder =
     ]
     in
   let* types = D.field "types" trlist in
-  D.succeed
-  { types 
-  } 
+  D.succeed { types }
 
-let typelist_entry : typelist_entry D.decoder = 
+let typelist_entry : typelist_entry D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
-  | "subtype" -> subtype >>= fun x -> D.succeed @@ SubType x 
-  | "functiontype" -> functiontype >>= fun x -> D.succeed @@ FunctionType x 
+  | "subtype" -> subtype >>= fun x -> D.succeed @@ SubType x
+  | "functiontype" -> functiontype >>= fun x -> D.succeed @@ FunctionType x
   | "tupletype" -> tupletype >>= fun x -> D.succeed @@ TupleType x
   | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
-  | "dep-binding" -> 
-    D.field "id" D.string >>= fun id -> 
-    D.field "type" typeref_w >>= fun type_ -> 
+  | "dep-binding" ->
+    D.field "id" D.string >>= fun id ->
+    D.field "type" typeref_w >>= fun type_ ->
     D.succeed @@ DepBinding { id ; type_}
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
@@ -208,24 +210,24 @@ let typelist : typelist D.decoder =
   D.succeed result
 
 
-let const_decl : const_decl D.decoder = 
+let const_decl : const_decl D.decoder =
   let* name = D.field "name" D.string in
   let* type_ = D.field "type" typeref_w in
   let* const_def = D.field "const-def" expr in
   D.succeed
-  { name  
-  ; type_ 
-  ; const_def 
+  { name
+  ; type_
+  ; const_def
   }
 
-let var_decl : var_decl D.decoder = 
+let var_decl : var_decl D.decoder =
   let* declared_type = D.field "declared-type" (D.list typeref_w) in
   let* id = D.field "id" D.string in
   let* type_ = D.field "type"  typeref_w in
   D.succeed
   { declared_type
-  ; id 
-  ; type_ 
+  ; id
+  ; type_
   }
 
 let proof_info : proof_info D.decoder =
@@ -236,7 +238,7 @@ let proof_info : proof_info D.decoder =
   ; status : string
   }
 
-let formula_decl : formula_decl D.decoder  = 
+let formula_decl : formula_decl D.decoder =
   let* label = D.field "label" D.string in
   let* definition = D.field "definition" ( D.list expr ) in 
   let* id = D.field "id" D.string in
