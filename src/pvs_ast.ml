@@ -101,9 +101,9 @@ type declaration =
 type formal_type_decl = { name : string }
 
 type theory = {
-  declarations : declaration list;
   id : string;
   formals : formal_type_decl list;
+  declarations : declaration list;
   assuming : unit;
 }
 
@@ -135,3 +135,85 @@ type module_with_hash = {
   module_ : theory list;
   type_hash : typelist;
 }
+
+module F = CCFormat
+
+let pp_var fmt v =
+  F.string fmt v.variable_name
+
+let rec pp_expr fmt e =
+  match e with
+  | Variable v -> pp_var fmt v
+  | Constant c -> F.string fmt c.constant_name
+  | Lambda l ->
+    let bs = l.bindings in
+    let e = l.expression in
+    F.fprintf fmt "@[@[λ%a@].@[%a@]@]"
+      F.(list pp_var) bs
+      pp_expr e
+  | Apply {operator; argument} ->
+    F.fprintf fmt "@[%a@[(@[%a@])@]@]"
+      pp_expr operator F.(list pp_expr) argument
+  | Cases c ->
+    F.fprintf fmt "(@[match @[%a@] with@\n@[| %a@]@])"
+      pp_expr c.expr
+      F.(list ~sep:(return "@\n| ") pp_selection) c.selections
+  | Integer n -> F.fprintf fmt "%d" n.integer_value
+  | If {test; then_; else_} ->
+    F.fprintf fmt "(if %a then %a else %a)"
+      pp_expr test pp_expr then_ pp_expr else_
+  | Forall {bindings; expression} ->
+    F.fprintf fmt "@[@[∀%a@](@[%a@])@]"
+      F.(list pp_var) bindings pp_expr expression
+  | Exists {bindings; expression} ->
+    F.fprintf fmt "@[@[∃%a@](@[%a@])@]"
+      F.(list pp_var) bindings pp_expr expression
+
+and pp_selection fmt {pattern; expr} =
+  F.fprintf fmt "@[@[%a@] ->@ @[%a@]@]"
+    pp_pattern pattern
+    pp_expr expr
+
+and pp_pattern fmt {expr; variables} =
+  F.fprintf fmt "@[%a(%a)@]"
+    pp_expr expr
+    F.(list pp_var) variables
+
+let pp_formula_decl fmt (d:formula_decl) =
+  F.fprintf fmt "@[Formula %s (%s) =@\n@ @[%a@]@]"
+    d.id
+    d.label
+    F.(list pp_expr) d.definition
+
+let pp_const_decl fmt (d:const_decl) =
+  F.fprintf fmt "@[Const %s : %d@ =@\n@ @[%a@]@]"
+    d.name
+    d.type_
+    pp_expr d.const_def
+
+let pp_var_decl fmt (d:var_decl) =
+  F.fprintf fmt "@[Var %s : %d@]"
+    d.id d.type_
+
+let pp_decl fmt d =
+  match d with
+  | FormulaDecl d ->
+    pp_formula_decl fmt d
+  | VarDecl d ->
+    pp_var_decl fmt d
+  | ConstDecl d ->
+    pp_const_decl fmt d
+
+let pp_theory fmt (t:theory) =
+  F.fprintf fmt "@[@{<Green>Theory@} %s@\n@ @[%a@]@]"
+    t.id
+    F.(list ~sep:(return "@\n") pp_decl) t.declarations
+
+let pp_module fmt m =
+  F.fprintf fmt "@[@{<Blue>Module@}@[@ %a @]@]@."
+    F.(list ~sep:(return "@\n") pp_theory) m
+
+let pp fmt m =
+  pp_module fmt m.module_
+
+let () = CCFormat.set_color_default true
