@@ -6,12 +6,6 @@ type type_actual = {
   type_ : typeref
 }
 
-type constant = {
-  actuals : type_actual list;
-  constant_name : string;
-  type_ : typeref
-}
-
 type variable = {
   variable_name : string;
   type_ : typeref
@@ -21,9 +15,14 @@ type integer = {
   integer_value : int
 }
 
+type formal_constant = {
+  constant_name : string
+}
+
 type expr =
   | Variable of variable
   | Constant of constant
+  | FormalConstant of formal_constant
   | Lambda of lambda
   | Apply of apply
   | Cases of cases
@@ -69,10 +68,24 @@ and pattern =
   ; variables : variable list
   }
 
+and constant = {
+  actuals : actual list;
+  constant_name : string;
+  type_ : typeref
+}
+
+and actual =
+  | TypeActual of type_actual
+  | ConstActual of const_actual
+
+and const_actual = {
+  expr : expr
+}
+  
 type const_decl = {
   name  : string;
   type_ : typeref;
-  const_def : expr;
+  const_def : expr option;
 }
 
 type var_decl = {
@@ -90,13 +103,43 @@ type formula_decl = {
   label : string;
   definition : expr list;
   id : string;
-  proof : proof_info
+  proof : proof_info option
+}
+
+type type_eq_decl = {
+  name: string;
+  type_: typeref
+}
+
+type type_decl = {
+  name : string
+}
+
+type application_judgement = {
+  id : string ;
+  declared_type : typeref list;
+  type_: typeref list;
+  name: expr;
+  formals: expr list list;
+  judgement_type: typeref list 
+}
+
+type subtype_judgement = {
+  id: string;
+  declared_type : typeref list;
+  type_: typeref list;
+  declared_subtype: typeref list;
+  subtype: typeref list
 }
 
 type declaration =
   | FormulaDecl of formula_decl
   | VarDecl of var_decl
   | ConstDecl of const_decl
+  | TypeDecl of type_decl
+  | TypeEqDecl of type_eq_decl
+  | ApplicationJudgement of application_judgement
+  | SubtypeJudgement of subtype_judgement
 
 type formal_type_decl = { name : string }
 
@@ -104,6 +147,25 @@ type theory = {
   id : string;
   formals : formal_type_decl list;
   declarations : declaration list;
+  assuming : unit;
+}
+
+type accessor = {
+  id : string ;
+  declared_type : typeref list ;
+  type_: typeref list
+}
+
+type constructor = {
+  id : string;
+  accessors : accessor list;
+  recognizer : string;
+  assuming : unit;
+}
+
+type datatype = {
+  formals : formal_type_decl list;
+  constructors : constructor list;
   assuming : unit;
 }
 
@@ -131,8 +193,12 @@ type typelist_entry =
 
 type typelist = (string, typelist_entry) Hashtbl.t
 
+type module_entry = 
+  | Theory of theory 
+  | DataType of datatype
+
 type module_with_hash = {
-  module_ : theory list;
+  module_ : module_entry list;
   type_hash : typelist;
 }
 
@@ -145,6 +211,7 @@ let rec pp_expr fmt e =
   match e with
   | Variable v -> pp_var fmt v
   | Constant c -> F.string fmt c.constant_name
+  | FormalConstant c -> F.string fmt c.constant_name
   | Lambda l ->
     let bs = l.bindings in
     let e = l.expression in
@@ -189,11 +256,28 @@ let pp_const_decl fmt (d:const_decl) =
   F.fprintf fmt "@[Const %s : %d@ =@\n@ @[%a@]@]"
     d.name
     d.type_
-    pp_expr d.const_def
+    (F.opt pp_expr) d.const_def 
 
 let pp_var_decl fmt (d:var_decl) =
   F.fprintf fmt "@[Var %s : %d@]"
     d.id d.type_
+
+let pp_type_eq_decl fmt (d:type_eq_decl) =
+  F.fprintf fmt "@[TypeEq %s : %d@]"
+    d.name d.type_
+
+let pp_type_decl fmt (d:type_decl) =
+  F.fprintf fmt "@[Type %s ]"
+    d.name 
+    
+let pp_application_judgement fmt (d:application_judgement) =
+  F.fprintf fmt "@[@J %s %a ]"
+    d.id
+    pp_expr d.name 
+
+let pp_subtype_judgement fmt (d:subtype_judgement) =
+  F.fprintf fmt "@[TJ %s ]"
+    d.id
 
 let pp_decl fmt d =
   match d with
@@ -203,15 +287,30 @@ let pp_decl fmt d =
     pp_var_decl fmt d
   | ConstDecl d ->
     pp_const_decl fmt d
+  | TypeEqDecl d ->
+    pp_type_eq_decl fmt d
+  | TypeDecl d ->
+    pp_type_decl fmt d
+  | ApplicationJudgement d ->
+    pp_application_judgement fmt d
+  | SubtypeJudgement d ->
+    pp_subtype_judgement fmt d
 
 let pp_theory fmt (t:theory) =
   F.fprintf fmt "@[@{<Green>Theory@} %s@\n@ @[%a@]@]"
     t.id
     F.(list ~sep:(return "@\n") pp_decl) t.declarations
 
+let pp_datatype fmt (d:datatype) =
+  F.fprintf fmt "@[@{<Green>Datatype@} ... @]"
+
+let pp_datatype fmt = function
+  | Theory d -> pp_theory fmt d
+  | DataType d -> pp_datatype fmt d
+
 let pp_module fmt m =
   F.fprintf fmt "@[@{<Blue>Module@}@[@ %a @]@]@."
-    F.(list ~sep:(return "@\n") pp_theory) m
+    F.(list ~sep:(return "@\n") pp_datatype) m
 
 let pp fmt m =
   pp_module fmt m.module_

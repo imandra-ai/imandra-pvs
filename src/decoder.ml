@@ -7,11 +7,32 @@ let (>>=) = D.(>>=)
 
 open Pvs_ast
 
+let tag : string D.decoder =
+  D.one_of
+  [ ( "string_tag" , D.string);
+    ( "list_string_tag", D.list D.string >>= function
+        | [] -> D.fail "empty tag list"
+        | h::[] -> D.succeed h
+        | _ -> D.fail "non-single tag list not implemented"
+    )
+  ]
+
 let typeref : typeref D.decoder = D.int
 
 let type_actual : type_actual D.decoder =
   let* type_ = D.field "type" typeref in
   D.succeed { type_ }
+
+let const_actual_ expr : const_actual D.decoder =
+  let* expr = D.field "expr" expr in
+  D.succeed { expr }
+
+let actual_ expr : actual D.decoder =
+  let* tag = D.field "tag" tag in
+  match tag with
+  | "type-actual" -> type_actual >>= fun x -> D.succeed @@ TypeActual x
+  | "const-actual" -> const_actual_ expr >>= fun x -> D.succeed @@ ConstActual x
+  | s -> D.fail @@ "Unknown actual tag" ^ s
 
 let list_or_null (f : 'a D.decoder) : 'a list D.decoder =
   D.one_of
@@ -19,8 +40,8 @@ let list_or_null (f : 'a D.decoder) : 'a list D.decoder =
       ("null" , D.null >>= fun () -> D.succeed []);
     ]
 
-let constant : constant D.decoder =
-  let* actuals = D.field "actuals" ( list_or_null type_actual ) in
+let constant_ expr: constant D.decoder =
+  let* actuals = D.field "actuals" ( list_or_null @@ actual_ expr ) in
   let* constant_name = D.field "constant-name" D.string in
   let* type_ = D.field "type" typeref in
   D.succeed { actuals;
@@ -41,6 +62,10 @@ let integer : integer D.decoder =
   D.succeed {
     integer_value;
   }
+
+let formal_constant: formal_constant D.decoder =
+  let* constant_name = D.field "constant-name" D.string in
+  D.succeed { constant_name }
 
 (* Workaround for arguments decoding -- it seems that there
    are two types of argument json encodings:
@@ -115,16 +140,6 @@ let bindings_ expr : bindings D.decoder =
     bindings;
   }
 
-let tag : string D.decoder =
-  D.one_of
-  [ ( "string_tag" , D.string);
-    ( "list_string_tag", D.list D.string >>= function
-        | [] -> D.fail "empty tag list"
-        | h::[] -> D.succeed h
-        | _ -> D.fail "non-single tag list not implemented"
-    )
-  ]
-
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -133,7 +148,7 @@ let expr : expr D.decoder =
     let* variable = variable in
     D.succeed @@ Variable variable
   | "constant" ->
-    let* constant = constant in
+    let* constant = constant_ expr in
     D.succeed @@ Constant constant
   | "lambda" ->
     let* lambda = lambda_ expr in
@@ -156,6 +171,9 @@ let expr : expr D.decoder =
   | "exists" ->
     let* bindings = bindings_ expr in
     D.succeed @@ Exists bindings
+  | "formal-constant" ->
+    let* formal_constant = formal_constant in
+    D.succeed @@ FormalConstant formal_constant
   | s -> D.fail @@ "Unknown expression tag" ^ s
 
 let typeref_w : typeref D.decoder =
@@ -213,7 +231,7 @@ let typelist : typelist D.decoder =
 let const_decl : const_decl D.decoder =
   let* name = D.field "name" D.string in
   let* type_ = D.field "type" typeref_w in
-  let* const_def = D.field "const-def" expr in
+  let* const_def = D.field "const-def" ( D.nullable expr) in
   D.succeed
   { name
   ; type_
@@ -224,11 +242,11 @@ let var_decl : var_decl D.decoder =
   let* declared_type = D.field "declared-type" (D.list typeref_w) in
   let* id = D.field "id" D.string in
   let* type_ = D.field "type"  typeref_w in
-  D.succeed
+  D.succeed (
   { declared_type
   ; id
   ; type_
-  }
+  } : var_decl )
 
 let proof_info : proof_info D.decoder =
   let* script = D.field "script" D.string in
@@ -242,13 +260,58 @@ let formula_decl : formula_decl D.decoder =
   let* label = D.field "label" D.string in
   let* definition = D.field "definition" ( D.list expr ) in 
   let* id = D.field "id" D.string in
-  let* proof = D.field "proof" proof_info in
+  let* proof = D.field "proof" (D.nullable proof_info) in
   D.succeed
   { label : string
   ; definition : expr list
   ; id : string
-  ; proof : proof_info
+  ; proof 
   }
+
+let type_eq_decl : type_eq_decl D.decoder =
+  let* name = D.field "name" D.string in
+  let* type_ = D.field "type" typeref in
+  D.succeed (
+  { name
+  ; type_
+  } : type_eq_decl)
+ 
+let type_decl : type_decl D.decoder =
+  let* name = D.field "name" D.string in
+  D.succeed (
+  { name
+  } : type_decl)
+
+let application_judgement : application_judgement D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" ( D.list typeref_w ) in
+  let* type_ = D.field "type" ( D.list typeref_w ) in
+  let* name = D.field "name" expr in
+  let* formals = D.field "formals" (list_or_null @@ D.list @@ expr) in
+  let* judgement_type = D.field "judgement-type" ( D.list typeref_w ) in
+  D.succeed {
+    id : string ;
+    declared_type : typeref list;
+    type_: typeref list;
+    name: expr;
+    formals: expr list list;
+    judgement_type: typeref list 
+  }
+
+let subtype_judgement : subtype_judgement D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" ( D.list typeref_w ) in
+  let* type_ = D.field "type" ( D.list typeref_w ) in
+  let* subtype = D.field "subtype" ( D.list typeref_w ) in
+  let* declared_subtype = D.field "declared-subtype" ( D.list typeref_w ) in
+  D.succeed ( {
+    id : string ;
+    declared_type : typeref list;
+    type_: typeref list;
+    declared_subtype: typeref list;
+    subtype
+  } : subtype_judgement )
+
 
 let declaration : declaration D.decoder =
   let* tag = D.field "tag" tag in
@@ -256,6 +319,10 @@ let declaration : declaration D.decoder =
   | "formula-decl" -> formula_decl >>= fun x -> D.succeed @@ FormulaDecl x
   | "var-decl" -> var_decl >>= fun x -> D.succeed @@ VarDecl x
   | "const-decl" -> const_decl >>= fun x -> D.succeed @@ ConstDecl x
+  | "type-eq-decl" -> type_eq_decl >>= fun x -> D.succeed @@ TypeEqDecl x
+  | "type-decl" -> type_decl >>= fun x -> D.succeed @@ TypeDecl x
+  | "application-judgement" -> application_judgement >>= fun x -> D.succeed @@ ApplicationJudgement x
+  | "subtype-judgement" -> subtype_judgement >>= fun x -> D.succeed @@ SubtypeJudgement x
   | s -> D.fail @@ "Unknown declaration tag " ^ s
 
 let formal_type_decl : formal_type_decl D.decoder = 
@@ -265,7 +332,7 @@ let formal_type_decl : formal_type_decl D.decoder =
 let theory : theory D.decoder = 
   let* declarations = D.field "declarations" ( D.list declaration ) in
   let* id = D.field "id" D.string in
-  let* formals = D.field "formals"  (D.list formal_type_decl) in
+  let* formals = D.field "formals"  (list_or_null formal_type_decl) in
   D.succeed
   { declarations : declaration list
   ; id : string
@@ -273,8 +340,42 @@ let theory : theory D.decoder =
   ; assuming = ()
   }
 
+let accessor : accessor D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" (D.list typeref_w) in
+  let* type_ = D.field "type" (D.list typeref_w) in
+  D.succeed { id; declared_type; type_ }
+
+let constructor : constructor D.decoder = 
+  let* id = D.field "id" D.string in
+  let* accessors = D.field "accessors" (list_or_null accessor) in
+  let* recognizer = D.field "recognizer" D.string in
+  D.succeed {
+    id;
+    accessors;
+    recognizer;
+    assuming = ();
+  }
+
+let datatype : datatype D.decoder = 
+  let* formals = D.field "formals" (list_or_null formal_type_decl) in
+  let* constructors = D.field "constructors" (D.list constructor) in
+  D.succeed ( {
+    formals ;
+    constructors;
+    assuming = ()
+  } : datatype )
+
+let module_entry : module_entry D.decoder =
+  let* tag = D.field "tag" tag in
+  match tag with
+  | "theory" -> theory >>= fun x -> D.succeed @@ Theory x
+  | "datatype" -> datatype >>= fun x -> D.succeed @@ DataType x
+  | s -> D.fail @@ "Unknown module entry tag " ^ s
+
+
 let module_with_hash : module_with_hash D.decoder =
-  let* module_ = D.field "module" (D.list theory) in
+  let* module_ = D.field "module" (D.list module_entry) in
   let* type_hash = D.field "type-hash" ( D.field "entries" typelist) in
   D.succeed
   { module_
