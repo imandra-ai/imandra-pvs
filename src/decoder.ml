@@ -242,11 +242,11 @@ let var_decl : var_decl D.decoder =
   let* declared_type = D.field "declared-type" (D.list typeref_w) in
   let* id = D.field "id" D.string in
   let* type_ = D.field "type"  typeref_w in
-  D.succeed
+  D.succeed (
   { declared_type
   ; id
   ; type_
-  }
+  } : var_decl )
 
 let proof_info : proof_info D.decoder =
   let* script = D.field "script" D.string in
@@ -340,8 +340,42 @@ let theory : theory D.decoder =
   ; assuming = ()
   }
 
+let accessor : accessor D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" (D.list typeref_w) in
+  let* type_ = D.field "type" (D.list typeref_w) in
+  D.succeed { id; declared_type; type_ }
+
+let constructor : constructor D.decoder = 
+  let* id = D.field "id" D.string in
+  let* accessors = D.field "accessors" (list_or_null accessor) in
+  let* recognizer = D.field "recognizer" D.string in
+  D.succeed {
+    id;
+    accessors;
+    recognizer;
+    assuming = ();
+  }
+
+let datatype : datatype D.decoder = 
+  let* formals = D.field "formals" (list_or_null formal_type_decl) in
+  let* constructors = D.field "constructors" (D.list constructor) in
+  D.succeed ( {
+    formals ;
+    constructors;
+    assuming = ()
+  } : datatype )
+
+let module_entry : module_entry D.decoder =
+  let* tag = D.field "tag" tag in
+  match tag with
+  | "theory" -> theory >>= fun x -> D.succeed @@ Theory x
+  | "datatype" -> datatype >>= fun x -> D.succeed @@ DataType x
+  | s -> D.fail @@ "Unknown module entry tag " ^ s
+
+
 let module_with_hash : module_with_hash D.decoder =
-  let* module_ = D.field "module" (D.list theory) in
+  let* module_ = D.field "module" (D.list module_entry) in
   let* type_hash = D.field "type-hash" ( D.field "entries" typelist) in
   D.succeed
   { module_

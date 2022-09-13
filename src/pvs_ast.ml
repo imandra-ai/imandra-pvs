@@ -150,6 +150,25 @@ type theory = {
   assuming : unit;
 }
 
+type accessor = {
+  id : string ;
+  declared_type : typeref list ;
+  type_: typeref list
+}
+
+type constructor = {
+  id : string;
+  accessors : accessor list;
+  recognizer : string;
+  assuming : unit;
+}
+
+type datatype = {
+  formals : formal_type_decl list;
+  constructors : constructor list;
+  assuming : unit;
+}
+
 type subtype = {
   supertype : typeref;
   predicate : expr;
@@ -174,8 +193,12 @@ type typelist_entry =
 
 type typelist = (string, typelist_entry) Hashtbl.t
 
+type module_entry = 
+  | Theory of theory 
+  | DataType of datatype
+
 type module_with_hash = {
-  module_ : theory list;
+  module_ : module_entry list;
   type_hash : typelist;
 }
 
@@ -278,9 +301,16 @@ let pp_theory fmt (t:theory) =
     t.id
     F.(list ~sep:(return "@\n") pp_decl) t.declarations
 
+let pp_datatype fmt (d:datatype) =
+  F.fprintf fmt "@[@{<Green>Datatype@} ... @]"
+
+let pp_datatype fmt = function
+  | Theory d -> pp_theory fmt d
+  | DataType d -> pp_datatype fmt d
+
 let pp_module fmt m =
   F.fprintf fmt "@[@{<Blue>Module@}@[@ %a @]@]@."
-    F.(list ~sep:(return "@\n") pp_theory) m
+    F.(list ~sep:(return "@\n") pp_datatype) m
 
 let pp fmt m =
   pp_module fmt m.module_
