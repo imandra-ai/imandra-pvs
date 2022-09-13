@@ -6,12 +6,6 @@ type type_actual = {
   type_ : typeref
 }
 
-type constant = {
-  actuals : type_actual list;
-  constant_name : string;
-  type_ : typeref
-}
-
 type variable = {
   variable_name : string;
   type_ : typeref
@@ -21,9 +15,14 @@ type integer = {
   integer_value : int
 }
 
+type formal_constant = {
+  constant_name : string
+}
+
 type expr =
   | Variable of variable
   | Constant of constant
+  | FormalConstant of formal_constant
   | Lambda of lambda
   | Apply of apply
   | Cases of cases
@@ -69,10 +68,24 @@ and pattern =
   ; variables : variable list
   }
 
+and constant = {
+  actuals : actual list;
+  constant_name : string;
+  type_ : typeref
+}
+
+and actual =
+  | TypeActual of type_actual
+  | ConstActual of const_actual
+
+and const_actual = {
+  expr : expr
+}
+  
 type const_decl = {
   name  : string;
   type_ : typeref;
-  const_def : expr;
+  const_def : expr option;
 }
 
 type var_decl = {
@@ -93,10 +106,16 @@ type formula_decl = {
   proof : proof_info
 }
 
+type type_eq_decl = {
+  name: string;
+  type_: typeref
+}
+
 type declaration =
   | FormulaDecl of formula_decl
   | VarDecl of var_decl
   | ConstDecl of const_decl
+  | TypeEqDecl of type_eq_decl
 
 type formal_type_decl = { name : string }
 
@@ -145,6 +164,7 @@ let rec pp_expr fmt e =
   match e with
   | Variable v -> pp_var fmt v
   | Constant c -> F.string fmt c.constant_name
+  | FormalConstant c -> F.string fmt c.constant_name
   | Lambda l ->
     let bs = l.bindings in
     let e = l.expression in
@@ -189,11 +209,15 @@ let pp_const_decl fmt (d:const_decl) =
   F.fprintf fmt "@[Const %s : %d@ =@\n@ @[%a@]@]"
     d.name
     d.type_
-    pp_expr d.const_def
+    (F.opt pp_expr) d.const_def 
 
 let pp_var_decl fmt (d:var_decl) =
   F.fprintf fmt "@[Var %s : %d@]"
     d.id d.type_
+
+let pp_type_eq_decl fmt (d:type_eq_decl) =
+  F.fprintf fmt "@[TypeEq %s : %d@]"
+    d.name d.type_
 
 let pp_decl fmt d =
   match d with
@@ -203,6 +227,9 @@ let pp_decl fmt d =
     pp_var_decl fmt d
   | ConstDecl d ->
     pp_const_decl fmt d
+  | TypeEqDecl d ->
+    pp_type_eq_decl fmt d
+  
 
 let pp_theory fmt (t:theory) =
   F.fprintf fmt "@[@{<Green>Theory@} %s@\n@ @[%a@]@]"
