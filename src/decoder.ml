@@ -260,12 +260,12 @@ let formula_decl : formula_decl D.decoder =
   let* label = D.field "label" D.string in
   let* definition = D.field "definition" ( D.list expr ) in 
   let* id = D.field "id" D.string in
-  let* proof = D.field "proof" proof_info in
+  let* proof = D.field "proof" (D.nullable proof_info) in
   D.succeed
   { label : string
   ; definition : expr list
   ; id : string
-  ; proof : proof_info
+  ; proof 
   }
 
 let type_eq_decl : type_eq_decl D.decoder =
@@ -276,6 +276,42 @@ let type_eq_decl : type_eq_decl D.decoder =
   ; type_
   } : type_eq_decl)
  
+let type_decl : type_decl D.decoder =
+  let* name = D.field "name" D.string in
+  D.succeed (
+  { name
+  } : type_decl)
+
+let application_judgement : application_judgement D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" ( D.list typeref_w ) in
+  let* type_ = D.field "type" ( D.list typeref_w ) in
+  let* name = D.field "name" expr in
+  let* formals = D.field "formals" (list_or_null @@ D.list @@ expr) in
+  let* judgement_type = D.field "judgement-type" ( D.list typeref_w ) in
+  D.succeed {
+    id : string ;
+    declared_type : typeref list;
+    type_: typeref list;
+    name: expr;
+    formals: expr list list;
+    judgement_type: typeref list 
+  }
+
+let subtype_judgement : subtype_judgement D.decoder = 
+  let* id = D.field "id" D.string in
+  let* declared_type = D.field "declared-type" ( D.list typeref_w ) in
+  let* type_ = D.field "type" ( D.list typeref_w ) in
+  let* subtype = D.field "subtype" ( D.list typeref_w ) in
+  let* declared_subtype = D.field "declared-subtype" ( D.list typeref_w ) in
+  D.succeed ( {
+    id : string ;
+    declared_type : typeref list;
+    type_: typeref list;
+    declared_subtype: typeref list;
+    subtype
+  } : subtype_judgement )
+
 
 let declaration : declaration D.decoder =
   let* tag = D.field "tag" tag in
@@ -284,6 +320,9 @@ let declaration : declaration D.decoder =
   | "var-decl" -> var_decl >>= fun x -> D.succeed @@ VarDecl x
   | "const-decl" -> const_decl >>= fun x -> D.succeed @@ ConstDecl x
   | "type-eq-decl" -> type_eq_decl >>= fun x -> D.succeed @@ TypeEqDecl x
+  | "type-decl" -> type_decl >>= fun x -> D.succeed @@ TypeDecl x
+  | "application-judgement" -> application_judgement >>= fun x -> D.succeed @@ ApplicationJudgement x
+  | "subtype-judgement" -> subtype_judgement >>= fun x -> D.succeed @@ SubtypeJudgement x
   | s -> D.fail @@ "Unknown declaration tag " ^ s
 
 let formal_type_decl : formal_type_decl D.decoder = 
@@ -293,7 +332,7 @@ let formal_type_decl : formal_type_decl D.decoder =
 let theory : theory D.decoder = 
   let* declarations = D.field "declarations" ( D.list declaration ) in
   let* id = D.field "id" D.string in
-  let* formals = D.field "formals"  (D.list formal_type_decl) in
+  let* formals = D.field "formals"  (list_or_null formal_type_decl) in
   D.succeed
   { declarations : declaration list
   ; id : string

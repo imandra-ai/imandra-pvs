@@ -103,7 +103,7 @@ type formula_decl = {
   label : string;
   definition : expr list;
   id : string;
-  proof : proof_info
+  proof : proof_info option
 }
 
 type type_eq_decl = {
@@ -111,11 +111,35 @@ type type_eq_decl = {
   type_: typeref
 }
 
+type type_decl = {
+  name : string
+}
+
+type application_judgement = {
+  id : string ;
+  declared_type : typeref list;
+  type_: typeref list;
+  name: expr;
+  formals: expr list list;
+  judgement_type: typeref list 
+}
+
+type subtype_judgement = {
+  id: string;
+  declared_type : typeref list;
+  type_: typeref list;
+  declared_subtype: typeref list;
+  subtype: typeref list
+}
+
 type declaration =
   | FormulaDecl of formula_decl
   | VarDecl of var_decl
   | ConstDecl of const_decl
+  | TypeDecl of type_decl
   | TypeEqDecl of type_eq_decl
+  | ApplicationJudgement of application_judgement
+  | SubtypeJudgement of subtype_judgement
 
 type formal_type_decl = { name : string }
 
@@ -219,6 +243,19 @@ let pp_type_eq_decl fmt (d:type_eq_decl) =
   F.fprintf fmt "@[TypeEq %s : %d@]"
     d.name d.type_
 
+let pp_type_decl fmt (d:type_decl) =
+  F.fprintf fmt "@[Type %s ]"
+    d.name 
+    
+let pp_application_judgement fmt (d:application_judgement) =
+  F.fprintf fmt "@[@J %s %a ]"
+    d.id
+    pp_expr d.name 
+
+let pp_subtype_judgement fmt (d:subtype_judgement) =
+  F.fprintf fmt "@[TJ %s ]"
+    d.id
+
 let pp_decl fmt d =
   match d with
   | FormulaDecl d ->
@@ -229,7 +266,12 @@ let pp_decl fmt d =
     pp_const_decl fmt d
   | TypeEqDecl d ->
     pp_type_eq_decl fmt d
-  
+  | TypeDecl d ->
+    pp_type_decl fmt d
+  | ApplicationJudgement d ->
+    pp_application_judgement fmt d
+  | SubtypeJudgement d ->
+    pp_subtype_judgement fmt d
 
 let pp_theory fmt (t:theory) =
   F.fprintf fmt "@[@{<Green>Theory@} %s@\n@ @[%a@]@]"
