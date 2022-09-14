@@ -250,9 +250,14 @@ and pp_selection fmt {pattern; expr} =
     pp_expr expr
 
 and pp_pattern fmt {expr; variables} =
-  F.fprintf fmt "@[%a(%a)@]"
+  F.fprintf fmt "@[%a%a@]"
     pp_expr expr
-    F.(list pp_var) variables
+    pp_pattern_vars variables
+
+and pp_pattern_vars fmt vars =
+  match vars with
+  | [] -> F.fprintf fmt ""
+  | _::_ -> F.fprintf fmt "(%a)" F.(list pp_var) vars
 
 let pp_formula_decl fmt (d:formula_decl) =
   F.fprintf fmt "@[Formula %s (%s) =@\n@ @[%a@]@]"
