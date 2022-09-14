@@ -81,7 +81,7 @@ and actual =
 and const_actual = {
   expr : expr
 }
-  
+
 type const_decl = {
   name  : string;
   type_ : typeref;
@@ -116,12 +116,12 @@ type type_decl = {
 }
 
 type application_judgement = {
-  id : string ;
-  declared_type : typeref list;
+  id: string;
+  declared_type: typeref list;
   type_: typeref list;
   name: expr;
   formals: expr list list;
-  judgement_type: typeref list 
+  judgement_type: typeref list;
 }
 
 type subtype_judgement = {
@@ -129,7 +129,7 @@ type subtype_judgement = {
   declared_type : typeref list;
   type_: typeref list;
   declared_subtype: typeref list;
-  subtype: typeref list
+  subtype: typeref list;
 }
 
 type declaration =
@@ -144,45 +144,53 @@ type declaration =
 type formal_type_decl = { name : string }
 
 type theory = {
-  id : string;
-  formals : formal_type_decl list;
-  declarations : declaration list;
-  assuming : unit;
+  id: string;
+  formals: formal_type_decl list;
+  declarations: declaration list;
+  assuming: unit;
 }
 
 type accessor = {
-  id : string ;
-  declared_type : typeref list ;
-  type_: typeref list
+  id: string;
+  declared_type : typeref list;
+  type_: typeref list;
 }
 
 type constructor = {
-  id : string;
-  accessors : accessor list;
-  recognizer : string;
-  assuming : unit;
+  id: string;
+  accessors: accessor list;
+  recognizer: string;
+  assuming: unit;
 }
 
 type datatype = {
-  formals : formal_type_decl list;
-  constructors : constructor list;
-  assuming : unit;
+  formals: formal_type_decl list;
+  constructors: constructor list;
+  assuming: unit;
 }
 
 type subtype = {
-  supertype : typeref;
-  predicate : expr;
+  supertype: typeref;
+  predicate: expr;
 }
 
 type functiontype = {
-  domain : typeref;
-  range : typeref;
+  domain: typeref;
+  range: typeref;
 }
 
-type tupletype = { types : typeref list }
+type tupletype = {
+  types: typeref list;
+}
 
-type typename = { id : string }
-type dep_binding = { id : string ; type_ : typeref}
+type typename = {
+  id: string;
+}
+
+type dep_binding = {
+  id : string;
+  type_ : typeref;
+}
 
 type typelist_entry =
   | SubType of subtype
@@ -193,8 +201,8 @@ type typelist_entry =
 
 type typelist = (string, typelist_entry) Hashtbl.t
 
-type module_entry = 
-  | Theory of theory 
+type module_entry =
+  | Theory of theory
   | DataType of datatype
 
 type module_with_hash = {
@@ -252,11 +260,16 @@ let pp_formula_decl fmt (d:formula_decl) =
     d.label
     F.(list pp_expr) d.definition
 
-let pp_const_decl fmt (d:const_decl) =
+let rec pp_const_decl fmt (d:const_decl) =
   F.fprintf fmt "@[Const %s : %d@ =@\n@ @[%a@]@]"
     d.name
     d.type_
-    (F.opt pp_expr) d.const_def 
+    pp_expr_opt d.const_def
+
+and pp_expr_opt fmt e =
+  match e with
+  | Some e -> pp_expr fmt e
+  | None -> F.fprintf fmt "None"
 
 let pp_var_decl fmt (d:var_decl) =
   F.fprintf fmt "@[Var %s : %d@]"
@@ -267,16 +280,16 @@ let pp_type_eq_decl fmt (d:type_eq_decl) =
     d.name d.type_
 
 let pp_type_decl fmt (d:type_decl) =
-  F.fprintf fmt "@[Type %s ]"
-    d.name 
-    
+  F.fprintf fmt "@[Type %s @]"
+    d.name
+
 let pp_application_judgement fmt (d:application_judgement) =
-  F.fprintf fmt "@[@J %s %a ]"
+  F.fprintf fmt "@[Judgement %s %a @]"
     d.id
-    pp_expr d.name 
+    pp_expr d.name
 
 let pp_subtype_judgement fmt (d:subtype_judgement) =
-  F.fprintf fmt "@[TJ %s ]"
+  F.fprintf fmt "@[SubtypeJudgement %s @]"
     d.id
 
 let pp_decl fmt d =
@@ -301,16 +314,32 @@ let pp_theory fmt (t:theory) =
     t.id
     F.(list ~sep:(return "@\n") pp_decl) t.declarations
 
-let pp_datatype fmt (d:datatype) =
-  F.fprintf fmt "@[@{<Green>Datatype@} ... @]"
+let rec pp_datatype fmt (d:datatype) =
+  F.fprintf fmt "@[@{<Green>Datatype@} @[%a =@]@\n@[| %a@]@]"
+    F.(list pp_formal_type_decl) d.formals
+    F.(list ~sep:(return "@\n| ") pp_constructors) d.constructors
 
-let pp_datatype fmt = function
+and pp_formal_type_decl fmt (d:formal_type_decl) =
+  F.fprintf fmt "@[%s@]" d.name
+
+and pp_constructors fmt (c:constructor) =
+  F.fprintf fmt "@[%s@ @[(@[%a@])@ (@[%s@])@]@]"
+    c.id
+    F.(list pp_accessor) c.accessors
+    c.recognizer
+
+and pp_accessor fmt (a:accessor) =
+  F.fprintf fmt "@[%s : (%a)@]"
+    a.id
+    F.(list int) a.declared_type
+
+let pp_entry fmt = function
   | Theory d -> pp_theory fmt d
   | DataType d -> pp_datatype fmt d
 
 let pp_module fmt m =
   F.fprintf fmt "@[@{<Blue>Module@}@[@ %a @]@]@."
-    F.(list ~sep:(return "@\n") pp_datatype) m
+    F.(list ~sep:(return "@\n") pp_entry) m
 
 let pp fmt m =
   pp_module fmt m.module_
