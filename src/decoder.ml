@@ -5,7 +5,7 @@ module D = Decoders_yojson.Basic.Decode
 let (let*) = D.(let*)
 let (>>=) = D.(>>=)
 
-open Pvs_ast
+open PVS_ast
 
 let tag : string D.decoder =
   D.one_of

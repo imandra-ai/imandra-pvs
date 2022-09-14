@@ -1,6 +1,6 @@
 (library
- (name pvs)
- (public_name pvs)
+ (name imandra_PVS)
+ (public_name imandra_PVS)
  (libraries
    decoders-yojson
    containers

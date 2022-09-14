@@ -1,2 +1,2 @@
 (lang dune 3.1)
-(name pvs)
+(name imandra_PVS)
