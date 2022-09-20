@@ -1,0 +1,117 @@
+{
+    "type-hash": {
+        "entries": {
+            "3669441367": {
+                "place": [
+                    4811,
+                    13,
+                    4811,
+                    14
+                ],
+                "actuals": null,
+                "theory": "list_adt",
+                "id": "T",
+                "tag": "typename"
+            },
+            "1426065605": {
+                "place": [
+                    4811,
+                    20,
+                    4811,
+                    24
+                ],
+                "actuals": null,
+                "theory": "list_adt",
+                "id": "list",
+                "tag": "typename"
+            }
+        },
+        "tag": "typelist"
+    },
+    "module": [
+        {
+            "place": [
+                4808,
+                0,
+                4813,
+                9
+            ],
+            "constructors": [
+                {
+                    "place": [
+                        4810,
+                        6,
+                        4810,
+                        13
+                    ],
+                    "recognizer": "null?",
+                    "id": "null",
+                    "tag": "constructor"
+                },
+                {
+                    "place": [
+                        4811,
+                        7,
+                        4811,
+                        25
+                    ],
+                    "recognizer": "cons?",
+                    "accessors": 
+                        [
+                            {
+                                "place": [
+                                    4811,
+                                    8,
+                                    4811,
+                                    14
+                                ],
+                                "type": {
+                                    "typehash": "3669441367"
+                                },
+                                "declared-type": {
+                                    "typehash": "3669441367"
+                                },
+                                "id": "car",
+                                "tag": "accessor"
+                            },
+                            {
+                                "place": [
+                                    4811,
+                                    16,
+                                    4811,
+                                    24
+                                ],
+                                "type": {
+                                    "typehash": "1426065605"
+                                },
+                                "declared-type": {
+                                    "typehash": "1426065605"
+                                },
+                                "id": "cdr",
+                                "tag": "accessor"
+                            }
+                        ]
+                    ,
+                    "id": "cons",
+                    "tag": "constructor"
+                }
+            ],
+            "formals": [
+                {
+                    "place": [
+                        4808,
+                        9,
+                        4808,
+                        13
+                    ],
+                    "theory": "list",
+                    "id": "T",
+                    "tag": "formal-type-decl"
+                }
+            ],
+            "id": "list",
+            "tag": "datatype"
+        }
+    ],
+    "tag": "module-with-hash"
+}

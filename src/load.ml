@@ -12,3 +12,5 @@ let top (filename:string) : PVS_ast.module_with_hash =
       p
     end
   | Error e -> raise (Error e)
+
+let () = CCFormat.set_color_default true
