@@ -71,6 +71,12 @@ let integer : integer D.decoder =
     integer_value;
   }
 
+let string_const : string_const D.decoder =
+  let* string_value = D.field "string-value" D.string in
+  D.succeed {
+    string_value;
+  }
+
 let formal_constant: formal_constant D.decoder =
   let* constant_name = D.field "id" D.string in
   let* theory = D.field "theory" D.string in
@@ -148,6 +154,38 @@ let bindings_ expr : bindings D.decoder =
     bindings;
   }
 
+let assignment expr : assignment D.decoder =
+  let* arguments = D.field "arguments" (D.list (D.index 0 expr)) in
+  let* expr = D.field "expr" expr in
+  D.succeed {
+    arguments;
+    expr;
+  }
+
+let update expr : update D.decoder =
+  let* expression = D.field "expression" (expr) in
+  let* assignments = D.field "assignments" (D.list @@ assignment expr) in
+  D.succeed {
+    expr=expression;
+    assignments;
+  }
+
+let binding expr : let_binding D.decoder =
+  let* id = D.field "id" D.string in
+  let* expr = D.field "expr" expr in
+  D.succeed ({
+    id;
+    expr;
+  } : let_binding)
+
+let let_ expr : let_ D.decoder =
+  let* bindings = D.field "bindings" @@ D.list (binding expr) in
+  let* body = D.field "body" expr in
+  D.succeed {
+    bindings;
+    body;
+  }
+
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -164,6 +202,9 @@ let expr : expr D.decoder =
   | "apply" ->
     let* apply = apply_ expr in
     D.succeed @@ Apply apply
+  | "let" ->
+    let* let_ = let_ expr in
+    D.succeed @@ Let let_
   | "cases" ->
     let* cases = cases_ expr in
     D.succeed @@ Cases cases
@@ -173,6 +214,12 @@ let expr : expr D.decoder =
   | "integer" ->
     let* integer = integer in
     D.succeed @@ Integer integer
+  | "string" ->
+    let* string = string_const in
+    D.succeed @@ String string
+  | "update" ->
+    let* update = update expr in
+    D.succeed @@ Update update
   | "forall" ->
     let* bindings = bindings_ expr in
     D.succeed @@ Forall bindings
@@ -232,13 +279,19 @@ let type_db : type_db D.decoder =
 let const_decl : const_decl D.decoder =
   let* id = D.field "id" D.string in
   let* type_ = D.field "type" typeref_w in
-  let* const_def = D.maybe (D.field "const-def" expr) in
+  (* A constant may not be defined. But if it is, the definition better parse!
+     This is more forceful than just using `D.maybe expr` ... .*)
+  (* let* const_def = D.one_of ([
+   *     ("has_a_const_def", (D.field "const-def" expr) >>= fun x -> D.succeed @@ Some x);
+   *     ("bad_const_def", (D.field "const-def" expr) >>= fun _ -> D.fail "bad const-def");
+   *     ("uninterpreted", D.succeed None)]) in *)
+  let* const_def = D.maybe @@ D.field "const-def" expr in
   let* theory = D.field "theory" D.string in
   D.succeed
-  { id
-  ; type_
-  ; const_def
-  ; theory
+  { id;
+    type_;
+    const_def;
+    theory;
   }
 
 let var_decl : var_decl D.decoder =

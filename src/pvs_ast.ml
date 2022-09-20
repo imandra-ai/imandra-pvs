@@ -15,6 +15,10 @@ type integer = {
   integer_value: int;
 }
 
+type string_const = {
+  string_value: string;
+}
+
 type formal_constant = {
   constant_name: string;
   theory: string;
@@ -25,12 +29,25 @@ type expr =
   | Constant of constant
   | FormalConstant of formal_constant
   | Lambda of lambda
+  | Let of let_
   | Apply of apply
   | Cases of cases
   | If of if_
   | Integer of integer
+  | String of string_const
+  | Update of update
   | Forall of bindings
   | Exists of bindings
+
+and let_ = {
+  bindings: let_binding list;
+  body: expr;
+}
+
+and let_binding = {
+  id: string;
+  expr: expr;
+}
 
 and apply = {
   operator: expr;
@@ -82,6 +99,16 @@ and actual =
 
 and const_actual = {
   expr : expr
+}
+
+and update = {
+  expr: expr;
+  assignments: assignment list;
+}
+
+and assignment = {
+  arguments: expr list;
+  expr: expr;
 }
 
 type const_decl = {
@@ -236,6 +263,19 @@ let rec pp_expr fmt e =
     F.fprintf fmt "@[@[λ%a@].@[%a@]@]"
       F.(list pp_var) bs
       pp_expr e
+  | Let {bindings; body} ->
+    F.fprintf fmt "@[let (%a) in %a@]"
+      (F.list pp_let_binding) bindings
+      pp_expr body
+  | Apply {operator; argument=[x;y]} when op_is_eq operator ->
+    F.fprintf fmt "@[(%a = %a)@]"
+      pp_expr x pp_expr y
+  (* | Apply {operator; argument=[x;y]} when op_is_or operator ->
+   *   F.fprintf fmt "@[(%a || %a)@]"
+   *     pp_expr x pp_expr y
+   * | Apply {operator; argument=[x;y]} when op_is_and operator ->
+   *   F.fprintf fmt "@[(%a && %a)@]"
+   *     pp_expr x pp_expr y *)
   | Apply {operator; argument} ->
     F.fprintf fmt "@[%a@[(@[%a@])@]@]"
       pp_expr operator F.(list pp_expr) argument
@@ -244,15 +284,44 @@ let rec pp_expr fmt e =
       pp_expr c.expr
       F.(list ~sep:(return "@\n| ") pp_selection) c.selections
   | Integer n -> F.fprintf fmt "%d" n.integer_value
+  | String s -> F.fprintf fmt "%S" s.string_value
   | If {test; then_; else_} ->
     F.fprintf fmt "(if %a then %a else %a)"
       pp_expr test pp_expr then_ pp_expr else_
+  | Update u ->
+    F.fprintf fmt "@[%a WITH [%a]@]"
+      pp_expr u.expr F.(list pp_assignment) u.assignments
   | Forall {bindings; expression} ->
     F.fprintf fmt "@[@[∀%a@](@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
   | Exists {bindings; expression} ->
     F.fprintf fmt "@[@[∃%a@](@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
+
+and pp_assignment fmt (a:assignment) =
+  F.fprintf fmt "@[(%a) := %a@]"
+    F.(list pp_expr) a.arguments
+    pp_expr a.expr
+
+and pp_let_binding fmt (b:let_binding) =
+  F.fprintf fmt "@[(%s = %a)@]"
+    b.id
+    pp_expr b.expr
+
+and op_is_eq operator =
+  match operator with
+  | Constant c -> c.id = "="
+  | _ -> false
+
+and op_is_or operator =
+  match operator with
+  | Constant c -> c.id = "OR"
+  | _ -> false
+
+and op_is_and operator =
+  match operator with
+  | Constant c -> c.id = "AND"
+  | _ -> false
 
 and pp_selection fmt {pattern; expr} =
   F.fprintf fmt "@[@[%a@] ->@ @[%a@]@]"
@@ -275,16 +344,16 @@ let pp_formula_decl fmt (d:formula_decl) =
     d.label
     F.(list pp_expr) d.definition
 
-let pp_const_decl fmt (d:const_decl) =
-  F.fprintf fmt "@[Const %s : %S@ =@\n@ @[%s@]@]"
-    d.id
-    d.type_
-    d.theory
-
 let pp_expr_opt fmt e =
   match e with
   | Some e -> pp_expr fmt e
   | None -> F.fprintf fmt "None"
+
+let pp_const_decl fmt (d:const_decl) =
+  F.fprintf fmt "@[Const %s : %S@ @\n@ = @[%a@]@]"
+    d.id
+    d.type_
+    pp_expr_opt d.const_def
 
 let pp_var_decl fmt (d:var_decl) =
   F.fprintf fmt "@[Var %s : %S@]"
@@ -331,16 +400,17 @@ let pp_decl fmt d =
   | SubtypeJudgement d ->
     pp_subtype_judgement fmt d
 
-let pp_theory fmt (t:theory) =
-  F.fprintf fmt "@[@{<Green>Theory@} %s@\n@ @[%a@]@]@."
+let rec pp_theory fmt (t:theory) =
+  F.fprintf fmt "@[@{<Green>Theory@} %s [%a] =@\nBegin @[%a@]@\nEnd.@]"
     t.id
+    F.(list pp_formal_type_decl) t.formals
     F.(list ~sep:(return "@\n") pp_decl) t.declarations
 
-let opt_no_prefix pp fmt x = match x with
+and opt_no_prefix pp fmt x = match x with
   | None -> CCFormat.pp_print_string fmt ""
   | Some x -> CCFormat.fprintf fmt "%a" pp x
 
-let rec pp_datatype fmt (d:datatype) =
+and pp_datatype fmt (d:datatype) =
   F.fprintf fmt "@[@{<Green>Datatype@} @[%a =@]@\n@[| %a@]@]@."
     F.(opt_no_prefix @@ list pp_formal_type_decl) d.formals
     F.(list ~sep:(return "@\n| ") pp_constructors) d.constructors
