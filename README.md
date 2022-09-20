@@ -15,12 +15,14 @@ dune utop src/
 # Failing
 We currently fail on:
  - `"tag": "update"` - example `"test/json-prelude-theories3/bv_arithmetic_defs.json"`
- - `"tag": "project"` - example `"test/json-prelude-theories3/bv_caret.json"`
- - `"tag": "getfield"` - example `"test/json-prelude-theories3/finite_sequences.json"`
- - `"tag": "name-judgment"` - example `"test/json-prelude-theories3/finite_sets.json"`
+ - `"tag": "project"` - example `"test/json-prelude-theories3/bv_caret.json"` and `"test/json-prelude-theories3/QuotientDistributive.json"`
+ - `"tag": "getfield"` - example `"test/json-prelude-theories3/finite_sequences.json"` and `"test/json-prelude-theories3/list2finseq.json"` and `"test/json-prelude-theories3/more_finseq.json"` and `"test/json-prelude-theories3/PartialFunctionComposition.json"` and `"test/json-prelude-theories3/stdtokenizer.json"`
+ - `"tag": "name-judgment"` - example `"test/json-prelude-theories3/finite_sets.json"` and `"test/json-prelude-theories3/real_props.json"` and `"test/json-prelude-theories3/sets_lemmas.json"`
+ - `"tag": "auto-rewrite-decl"` - example `"test/json-prelude-theories3/sets.json"`
+ - `"tag": "enumtype"` - example `"test/json-prelude-theories3/stdio.json"` and `"test/json-prelude-theories3/stdmath.json"`
  
 ```ocaml
- utop # let m = Imandra_PVS.Load.top "test/json-prelude-theories3/integertypes.json";;
+utop # let m = Imandra_PVS.Load.top "test/json-prelude-theories3/integertypes.json";;
 Exception:
 Imandra_PVS.Load.Error
  While reading test/json-prelude-theories3/integertypes.json:
