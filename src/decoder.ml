@@ -46,12 +46,12 @@ let list_or_null (f : 'a D.decoder) : 'a list D.decoder =
       ("null" , D.null >>= fun () -> D.succeed []);
     ]
 
-let constant_ _expr: constant D.decoder =
-  (* let* actuals = D.field "actuals" ( list_or_null @@ actual_ expr ) in *)
+let constant_ expr: constant D.decoder =
+  let* actuals = D.maybe @@ D.field "actuals" ( D.list @@ actual_ expr ) in
   let* id = D.field "id" D.string in
   let* type_ = D.field "type" typeref_w in
   let* theory = D.field "theory" D.string in
-  D.succeed ({ actuals=[];
+  D.succeed ({ actuals=(match actuals with Some xs -> xs | None -> []);
                id;
                type_;
                theory;

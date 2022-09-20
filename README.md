@@ -34,3 +34,6 @@ Imandra_PVS.Load.Error
  - `"tag": "conversion-decl"` - example `"test/json-prelude-theories3/bv_nat.json"` and `"test/json-prelude-theories3/bv.json"` and `"test/json-prelude-theories3/ctlops.json"` and `"test/json-prelude-theories3/extend_bool.json"` and `"test/json-prelude-theories3/Fairctlops.json"`
  
  
+# Notes
+
+- A nice example of `actuals` - `bv_extend_defs.json`, in particular `zero_extend`

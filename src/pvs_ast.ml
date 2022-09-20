@@ -255,7 +255,7 @@ let pp_var fmt v =
 let rec pp_expr fmt e =
   match e with
   | Variable v -> pp_var fmt v
-  | Constant c -> F.string fmt c.id
+  | Constant c -> pp_const fmt c
   | FormalConstant c -> F.string fmt c.constant_name
   | Lambda l ->
     let bs = l.bindings in
@@ -268,14 +268,17 @@ let rec pp_expr fmt e =
       (F.list pp_let_binding) bindings
       pp_expr body
   | Apply {operator; argument=[x;y]} when op_is_eq operator ->
-    F.fprintf fmt "@[(%a = %a)@]"
+    F.fprintf fmt "@[(%a@ =@ %a)@]"
       pp_expr x pp_expr y
-  (* | Apply {operator; argument=[x;y]} when op_is_or operator ->
-   *   F.fprintf fmt "@[(%a || %a)@]"
-   *     pp_expr x pp_expr y
-   * | Apply {operator; argument=[x;y]} when op_is_and operator ->
-   *   F.fprintf fmt "@[(%a && %a)@]"
-   *     pp_expr x pp_expr y *)
+  | Apply {operator; argument=[x;y]} when op_is_or operator ->
+    F.fprintf fmt "@[(%a@ ||@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_and operator ->
+    F.fprintf fmt "@[(%a@ && %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_implies operator ->
+    F.fprintf fmt "@[(%a@ ==> %a)@]"
+      pp_expr x pp_expr y
   | Apply {operator; argument} ->
     F.fprintf fmt "@[%a@[(@[%a@])@]@]"
       pp_expr operator F.(list pp_expr) argument
@@ -297,6 +300,22 @@ let rec pp_expr fmt e =
   | Exists {bindings; expression} ->
     F.fprintf fmt "@[@[∃%a@](@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
+
+and pp_const fmt c =
+  match c.actuals with
+  | (ConstActual _ :: _) as xs ->
+    F.fprintf fmt "@[%s[%a]@]"
+      c.id F.(list pp_actual) xs
+  | _ ->
+    F.string fmt c.id
+
+and pp_actual fmt a =
+  match a with
+  | ConstActual c ->
+    pp_expr fmt c.expr
+  | TypeActual _t ->
+    F.string fmt ""
+    (* F.string fmt t.type_ *)
 
 and pp_assignment fmt (a:assignment) =
   F.fprintf fmt "@[(%a) := %a@]"
@@ -321,6 +340,11 @@ and op_is_or operator =
 and op_is_and operator =
   match operator with
   | Constant c -> c.id = "AND"
+  | _ -> false
+
+and op_is_implies operator =
+  match operator with
+  | Constant c -> c.id = "IMPLIES"
   | _ -> false
 
 and pp_selection fmt {pattern; expr} =
