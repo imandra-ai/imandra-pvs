@@ -23,6 +23,7 @@ let typeref_w : typeref D.decoder =
   D.one_of
     [ ("flat int typeref", D.string)
     ; ("typeref in dict", D.field "typehash" D.string)
+    ; ("int typeref in dict", D.field "typehash" D.int >>= fun x -> D.succeed @@ string_of_int x)
     ]
 
 let type_actual : type_actual D.decoder =
@@ -89,15 +90,15 @@ let formal_constant: formal_constant D.decoder =
    - a tuple with [["tag", "tuple"], ... rest arguments ... ]
  *)
 
-let arguments_ (expr : expr D.decoder) : (expr list) D.decoder =
+let arguments_ (expr : expr D.decoder) =
   D.one_of
-    [ ("normal_expr", expr >>= fun x -> D.succeed [ x ] )
-    ; ("tuple_exprs",
+    [ ("tuple_exprs",
          (
            let* args = D.field "exprs" (D.list expr) in
-           D.succeed @@ args
+           D.succeed args
          )
-      )
+      );
+      ("normal_expr", expr >>= fun x -> D.succeed [ x ] )
     ]
 
 let apply_ expr : apply D.decoder =
@@ -186,6 +187,20 @@ let let_ expr : let_ D.decoder =
     body;
   }
 
+let project expr : project D.decoder =
+  let* argument = D.field "argument" expr in
+  let* index = D.field "index" D.int in
+  D.succeed {
+    argument;
+    index;
+  }
+
+let tuple expr : tuple D.decoder =
+  let* exprs = D.field "exprs" (D.list expr) in
+  D.succeed ({
+   exprs
+  } : tuple)
+
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -229,14 +244,23 @@ let expr : expr D.decoder =
   | "formal-constant" ->
     let* formal_constant = formal_constant in
     D.succeed @@ FormalConstant formal_constant
+  | "project" ->
+    let* project = project expr in
+    D.succeed @@ Project project
+  | "tuple" ->
+    let* tuple = tuple expr in
+    D.succeed @@ Tuple tuple
   | s -> D.fail @@ "Unknown expression tag '" ^ s ^ "'"
 
 let subtype : subtype D.decoder =
-  let* supertype = D.field "supertype" typeref_w in
-  let* predicate = D.field "predicate" expr in
+  let* supertype = (* TODO: make strict with D.field_opt once JSON gen bug is fixed;
+                        see `functions.json` from prelude-jsons3 *)
+    D.maybe (D.field "supertype" typeref_w)
+  in
+  let* predicate = D.field "predicate" (D.nullable expr) in
   D.succeed
-  { supertype : typeref
-  ; predicate : expr
+  { supertype : typeref option
+  ; predicate : expr option
   }
 
 let functiontype : functiontype D.decoder =
@@ -266,7 +290,7 @@ let typelist_entry : type_db_entry D.decoder =
   | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
   | "dep-binding" ->
     D.field "id" D.string >>= fun id ->
-    D.field "type" typeref_w >>= fun type_ ->
+    D.field "typehash" typeref_w >>= fun type_ ->
     D.succeed @@ DepBinding { id ; type_}
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
@@ -453,7 +477,7 @@ let module_with_hash : module_with_hash D.decoder =
   let* type_hash =
     D.one_of ([
         "module_with_hash", D.field "type-hash" ( D.field "entries" type_db );
-        "raw_def", D.succeed (Hashtbl.create 0)])
+        (* "raw_def", D.succeed (Hashtbl.create 0)] *)])
   in
   D.succeed
   { module_

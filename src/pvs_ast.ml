@@ -38,6 +38,17 @@ type expr =
   | Update of update
   | Forall of bindings
   | Exists of bindings
+  | Project of project
+  | Tuple of tuple
+
+and tuple = {
+  exprs: expr list;
+}
+
+and project = {
+  argument: expr;
+  index: int;
+}
 
 and let_ = {
   bindings: let_binding list;
@@ -207,8 +218,8 @@ type datatype = {
 }
 
 type subtype = {
-  supertype: typeref;
-  predicate: expr;
+  supertype: typeref option;
+  predicate: expr option;
 }
 
 type functiontype = {
@@ -271,13 +282,37 @@ let rec pp_expr fmt e =
     F.fprintf fmt "@[(%a@ =@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_or operator ->
-    F.fprintf fmt "@[(%a@ ||@ %a)@]"
+    F.fprintf fmt "@[(%a@ ∨@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_and operator ->
-    F.fprintf fmt "@[(%a@ && %a)@]"
+    F.fprintf fmt "@[(%a@ ∧@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_implies operator ->
-    F.fprintf fmt "@[(%a@ ==> %a)@]"
+    F.fprintf fmt "@[(%a@ =>@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_iff operator ->
+    F.fprintf fmt "@[(%a@ <=>@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_plus operator ->
+    F.fprintf fmt "@[(%a@ +@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_times operator ->
+    F.fprintf fmt "@[(%a@ *@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_minus operator ->
+    F.fprintf fmt "@[(%a@ -@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_lt operator ->
+    F.fprintf fmt "@[(%a@ <@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_gt operator ->
+    F.fprintf fmt "@[(%a@ >@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_leq operator ->
+    F.fprintf fmt "@[(%a@ <=@ %a)@]"
+      pp_expr x pp_expr y
+  | Apply {operator; argument=[x;y]} when op_is_geq operator ->
+    F.fprintf fmt "@[(%a@ >=@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument} ->
     F.fprintf fmt "@[%a@[(@[%a@])@]@]"
@@ -300,6 +335,29 @@ let rec pp_expr fmt e =
   | Exists {bindings; expression} ->
     F.fprintf fmt "@[@[∃%a@](@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
+  | Project {argument; index} ->
+    F.fprintf fmt "@[Proj_{%d}(%a)@]"
+      index pp_expr argument
+  | Tuple {exprs} ->
+    F.fprintf fmt "@[Tuple(%a)@]"
+      F.(list pp_expr) exprs
+
+and pp_type_db_entry fmt (t:type_db_entry) =
+  match t with
+  | SubType s ->
+    F.fprintf fmt "@[{x:%a | %a x}@]"
+      (F.opt pp_typeref) s.supertype
+      (F.opt pp_expr) s.predicate
+  | FunctionType f ->
+    F.fprintf fmt "@[%a -> %a@]"
+      pp_typeref f.domain pp_typeref f.range
+  | TupleType t ->
+    F.fprintf fmt "@[(%a)@]"
+      F.(list ~sep:(return " * ") pp_typeref) t.types
+  | TypeName t ->
+    F.string fmt t.id
+  | DepBinding _ ->
+    F.fprintf fmt "<DepBinding>"
 
 and pp_const fmt c =
   match c.actuals with
@@ -347,6 +405,46 @@ and op_is_implies operator =
   | Constant c -> c.id = "IMPLIES"
   | _ -> false
 
+and op_is_iff operator =
+  match operator with
+  | Constant c -> c.id = "IFF"
+  | _ -> false
+
+and op_is_plus operator =
+  match operator with
+  | Constant c -> c.id = "+"
+  | _ -> false
+
+and op_is_times operator =
+  match operator with
+  | Constant c -> c.id = "*"
+  | _ -> false
+
+and op_is_minus operator =
+  match operator with
+  | Constant c -> c.id = "-"
+  | _ -> false
+
+and op_is_lt operator =
+  match operator with
+  | Constant c -> c.id = "<"
+  | _ -> false
+
+and op_is_gt operator =
+  match operator with
+  | Constant c -> c.id = ">"
+  | _ -> false
+
+and op_is_geq operator =
+  match operator with
+  | Constant c -> c.id = ">="
+  | _ -> false
+
+and op_is_leq operator =
+  match operator with
+  | Constant c -> c.id = "<="
+  | _ -> false
+
 and pp_selection fmt {pattern; expr} =
   F.fprintf fmt "@[@[%a@] ->@ @[%a@]@]"
     pp_pattern pattern
@@ -361,6 +459,9 @@ and pp_pattern_vars fmt vars =
   match vars with
   | [] -> F.fprintf fmt ""
   | _::_ -> F.fprintf fmt "(%a)" F.(list pp_var) vars
+
+and pp_typeref fmt ty =
+  F.fprintf fmt "%S" ty
 
 let pp_formula_decl fmt (d:formula_decl) =
   F.fprintf fmt "@[Formula %s (%s) =@\n@ @[%a@]@]"
@@ -402,8 +503,10 @@ let pp_application_judgement fmt (d:application_judgement) =
     pp_expr d.name
 
 let pp_subtype_judgement fmt (d:subtype_judgement) =
-  F.fprintf fmt "@[SubtypeJudgement %s @]"
+  F.fprintf fmt "@[SubtypeJudgement %s =@ %a SUBTYPE_OF %a @]"
     d.id
+    pp_typeref d.subtype
+    pp_typeref d.declared_type
 
 let pp_decl fmt d =
   match d with
@@ -425,7 +528,7 @@ let pp_decl fmt d =
     pp_subtype_judgement fmt d
 
 let rec pp_theory fmt (t:theory) =
-  F.fprintf fmt "@[@{<Green>Theory@} %s [%a] =@\nBegin @[%a@]@\nEnd.@]"
+  F.fprintf fmt "@[@[@{<Green>Theory@} %s [%a]@] =@\nBegin @[%a@]@\nEnd.@]@\n"
     t.id
     F.(list pp_formal_type_decl) t.formals
     F.(list ~sep:(return "@\n") pp_decl) t.declarations
@@ -461,5 +564,11 @@ let pp_module fmt m =
   F.fprintf fmt "@[@{<Blue>Module@}@[@ %a @]@\n  End.@]@."
     F.(list ~sep:(return "@\n") pp_entry) m
 
+let pp_type_db fmt (db : (string,type_db_entry) Hashtbl.t) =
+  F.fprintf fmt "\n@[Type DB:@\n@\n@[%a@]@]@."
+    F.(list ~sep:(return "@\n") @@ pair string pp_type_db_entry)
+    (CCList.uniq ~eq:(=) @@ List.of_seq @@ Hashtbl.to_seq db)
+
 let pp fmt m =
-  pp_module fmt m.module_
+  pp_module fmt m.module_;
+  pp_type_db fmt m.type_hash
