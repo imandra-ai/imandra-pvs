@@ -40,6 +40,12 @@ type expr =
   | Exists of bindings
   | Project of project
   | Tuple of tuple
+  | Getfield of getfield
+
+and getfield = {
+  argument: expr;
+  field: string;
+}
 
 and tuple = {
   exprs: expr list;
@@ -240,12 +246,22 @@ type dep_binding = {
   type_: typeref;
 }
 
+type record_type = {
+  fields: field list;
+}
+
+and field = {
+  id: string;
+  type_: typeref;
+}
+
 type type_db_entry =
   | SubType of subtype
   | FunctionType of functiontype
   | TupleType of tupletype
   | TypeName of typename
   | DepBinding of dep_binding
+  | RecordType of record_type
 
 type type_db = (string, type_db_entry) Hashtbl.t
 
@@ -341,6 +357,10 @@ let rec pp_expr fmt e =
   | Tuple {exprs} ->
     F.fprintf fmt "@[Tuple(%a)@]"
       F.(list pp_expr) exprs
+  | Getfield {argument; field} ->
+    F.fprintf fmt "@[Getfield(%a, %s)@]"
+      pp_expr argument
+      field
 
 and pp_type_db_entry fmt (t:type_db_entry) =
   match t with
@@ -349,7 +369,7 @@ and pp_type_db_entry fmt (t:type_db_entry) =
       (F.opt pp_typeref) s.supertype
       (F.opt pp_expr) s.predicate
   | FunctionType f ->
-    F.fprintf fmt "@[%a -> %a@]"
+    F.fprintf fmt "@[[%a -> %a]@]"
       pp_typeref f.domain pp_typeref f.range
   | TupleType t ->
     F.fprintf fmt "@[(%a)@]"
@@ -358,6 +378,8 @@ and pp_type_db_entry fmt (t:type_db_entry) =
     F.string fmt t.id
   | DepBinding _ ->
     F.fprintf fmt "<DepBinding>"
+  | RecordType _ ->
+    F.fprintf fmt "<RecordType>"
 
 and pp_const fmt c =
   match c.actuals with

@@ -201,6 +201,14 @@ let tuple expr : tuple D.decoder =
    exprs
   } : tuple)
 
+let getfield expr : getfield D.decoder =
+  let* argument = D.field "argument" expr in
+  let* field = D.field "field" D.string in
+  D.succeed ({
+      argument;
+      field;
+    } : getfield)
+
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -250,6 +258,9 @@ let expr : expr D.decoder =
   | "tuple" ->
     let* tuple = tuple expr in
     D.succeed @@ Tuple tuple
+  | "getfield" ->
+    let* getfield = getfield expr in
+    D.succeed @@ Getfield getfield
   | s -> D.fail @@ "Unknown expression tag '" ^ s ^ "'"
 
 let subtype : subtype D.decoder =
@@ -281,6 +292,15 @@ let tupletype : tupletype D.decoder =
   let* types = D.field "types" trlist in
   D.succeed { types }
 
+let recordtype : record_type D.decoder =
+  let field : field D.decoder =
+    let* id = D.field "id" D.string in
+    let* type_ = D.field "typehash" D.string in
+    D.succeed { id; type_ }
+  in
+  let* fields = D.field "fields" (D.list field) in
+  D.succeed { fields }
+
 let typelist_entry : type_db_entry D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
@@ -292,6 +312,7 @@ let typelist_entry : type_db_entry D.decoder =
     D.field "id" D.string >>= fun id ->
     D.field "typehash" typeref_w >>= fun type_ ->
     D.succeed @@ DepBinding { id ; type_}
+  | "recordtype" -> recordtype >>= fun x -> D.succeed @@ RecordType x
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
 let type_db : type_db D.decoder =
