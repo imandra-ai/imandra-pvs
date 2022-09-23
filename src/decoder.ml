@@ -156,6 +156,10 @@ let bindings_ expr : bindings D.decoder =
   }
 
 let assignment expr : assignment D.decoder =
+  (* There's an extra list around arguments, e.g.,
+     "arguments": [ [ { "field": "length" } ] ]
+     in `prelude4/list2finseq.json`.
+   *)
   let* arguments = D.field "arguments" (D.list (D.index 0 expr)) in
   let* expr = D.field "expr" expr in
   D.succeed {
@@ -209,6 +213,18 @@ let getfield expr : getfield D.decoder =
       field;
     } : getfield)
 
+let rec_row expr : rec_row D.decoder =
+  let* expr = D.field "expr" expr in
+  let* field = D.field "field" D.string in
+  D.succeed ({
+      expr;
+      field;
+    } : rec_row)
+
+let assignments expr : record D.decoder =
+  let* assignments = D.list (rec_row expr) in
+  D.succeed ({assignments} : record)
+
 let expr : expr D.decoder =
   D.fix @@ fun expr ->
   let* tag = D.field "tag" tag in
@@ -261,6 +277,9 @@ let expr : expr D.decoder =
   | "getfield" ->
     let* getfield = getfield expr in
     D.succeed @@ Getfield getfield
+  | "record" ->
+    let* assignments = assignments expr in
+    D.succeed @@ Record assignments
   | s -> D.fail @@ "Unknown expression tag '" ^ s ^ "'"
 
 let subtype : subtype D.decoder =
@@ -310,77 +329,70 @@ let typelist_entry : type_db_entry D.decoder =
   | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
   | "dep-binding" ->
     D.field "id" D.string >>= fun id ->
-    D.field "typehash" typeref_w >>= fun type_ ->
+    D.field "type" typeref_w >>= fun type_ ->
     D.succeed @@ DepBinding { id ; type_}
   | "recordtype" -> recordtype >>= fun x -> D.succeed @@ RecordType x
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
-let type_db : type_db D.decoder =
-  let result : type_db = Hashtbl.create 10 in
+let type_db (ht : type_db) : type_db D.decoder =
   let* kvs = D.key_value_pairs typelist_entry in
-  let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add result k v in
-  D.succeed result
+  let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add ht k v in
+  D.succeed ht
 
 let const_decl : const_decl D.decoder =
   let* id = D.field "id" D.string in
   let* type_ = D.field "type" typeref_w in
   (* A constant may not be defined. But if it is, the definition better parse!
-     This is more forceful than just using `D.maybe expr` ... .*)
-  (* let* const_def = D.one_of ([
-   *     ("has_a_const_def", (D.field "const-def" expr) >>= fun x -> D.succeed @@ Some x);
-   *     ("bad_const_def", (D.field "const-def" expr) >>= fun _ -> D.fail "bad const-def");
-   *     ("uninterpreted", D.succeed None)]) in *)
-  let* const_def = D.maybe @@ D.field "const-def" expr in
+     Thus, we use `D.field_opt` which is more forceful than just using `D.maybe expr.` *)
+  let* const_def = D.field_opt "const-def" expr in
   let* theory = D.field "theory" D.string in
-  D.succeed
-  { id;
+  D.succeed ({
+    id;
     type_;
     const_def;
     theory;
-  }
+  } : const_decl)
 
 let var_decl : var_decl D.decoder =
-  let* declared_type = D.field "declared-type" (typeref_w) in
   let* id = D.field "id" D.string in
   let* type_ = D.field "type" typeref_w in
-  D.succeed (
-  { declared_type = [declared_type];
-    id;
-    type_;
-  } : var_decl )
+  D.succeed ({
+      id;
+      type_;
+    } : var_decl)
 
 let proof_info : proof_info D.decoder =
   let* script = D.field "script" D.string in
   let* status = D.field "status" D.string in
-  D.succeed {
+  D.succeed ({
     script: string;
     status: string
-  }
+  } : proof_info)
 
 let formula_decl : formula_decl D.decoder =
   let* label = D.field "label" D.string in
-  let* definition = D.field "definition" ( expr ) in 
+  let* definition = D.field "definition" expr in
   let* id = D.field "id" D.string in
-  let* proof = D.field "proof" (D.nullable proof_info) in
-  D.succeed {
+  let* proof = D.maybe @@ D.field "proof" proof_info in
+  D.succeed ({
     label: string;
     definition=[definition];
     id: string;
     proof;
-  }
+  } : formula_decl)
 
 let type_eq_decl : type_eq_decl D.decoder =
   let* name = D.field "id" D.string in
   let* type_ = D.field "type" typeref_w in
-  D.succeed (
-  { name
-  ; type_
-  } : type_eq_decl)
+  D.succeed ({
+      name;
+      type_;
+    } : type_eq_decl)
 
 let type_decl : type_decl D.decoder =
   let* name = D.field "id" D.string in
   D.succeed ({
-      name
+      name;
     } : type_decl)
 
 let conversion_decl expr : conversion_decl D.decoder =
@@ -391,38 +403,41 @@ let conversion_decl expr : conversion_decl D.decoder =
       expr;
     } : conversion_decl)
 
-
 let application_judgement : application_judgement D.decoder =
   let* id = D.field "id" D.string in
-  let* declared_type = D.field "declared-type" ( D.list typeref_w ) in
   let* type_ = D.field "type" ( D.list typeref_w ) in
   let* name = D.field "name" expr in
   let* formals = D.field "formals" (list_or_null @@ D.list @@ expr) in
   let* judgement_type = D.field "judgement-type" ( D.list typeref_w ) in
-  D.succeed {
-    id : string ;
-    declared_type : typeref list;
+  D.succeed ({
+    id: string;
     type_: typeref list;
     name: expr;
     formals: expr list list;
     judgement_type: typeref list;
-  }
+  } : application_judgement)
 
 let subtype_judgement : subtype_judgement D.decoder =
   let* id = D.field "id" D.string in
-  let* declared_type = D.field "declared-type" ( typeref_w ) in
-  let* type_ = D.field "type" ( typeref_w ) in
-  let* subtype = D.field "subtype" ( typeref_w ) in
-  let* declared_subtype = D.field "declared-subtype" ( typeref_w ) in
-  D.succeed ( {
-    id : string ;
-    declared_type : typeref;
+  let* type_ = D.field "type" typeref_w in
+  let* subtype = D.field "subtype" typeref_w in
+  D.succeed ({
+    id: string;
     type_: typeref;
-    declared_subtype: typeref;
-    subtype
-  } : subtype_judgement )
+    subtype: typeref;
+  } : subtype_judgement)
 
-let declaration : declaration D.decoder =
+let name_judgement expr : name_judgement D.decoder =
+  let* id = D.field "id" D.string in
+  let* types = D.field "type" (D.list typeref_w) in
+  let* name = D.field "name" expr in
+  D.succeed ({
+      id: string;
+      types;
+      name: expr;
+    } : name_judgement)
+
+let declaration expr : declaration D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
   | "formula-decl" -> formula_decl >>= fun x -> D.succeed @@ FormulaDecl x
@@ -433,6 +448,7 @@ let declaration : declaration D.decoder =
   | "conversion-decl" -> conversion_decl expr >>= fun x -> D.succeed @@ ConversionDecl x
   | "application-judgement" -> application_judgement >>= fun x -> D.succeed @@ ApplicationJudgement x
   | "subtype-judgement" -> subtype_judgement >>= fun x -> D.succeed @@ SubtypeJudgement x
+  | "name-judgement" -> name_judgement expr >>= fun x -> D.succeed @@ NameJudgement x
   | s -> D.fail @@ "Unknown declaration tag " ^ s
 
 let formal_type_decl : formal_type_decl D.decoder =
@@ -440,8 +456,8 @@ let formal_type_decl : formal_type_decl D.decoder =
   let* theory = D.field "theory" D.string in
   D.succeed ({ id; theory } : formal_type_decl)
 
-let theory : theory D.decoder =
-  let* declarations = D.field "declarations" ( D.list declaration ) in
+let theory expr : theory D.decoder =
+  let* declarations = D.field "declarations" ( D.list (declaration expr) ) in
   let* id = D.field "id" D.string in
   let* formals = D.maybe @@ D.field "formals"  (list_or_null formal_type_decl) in
   D.succeed
@@ -453,9 +469,8 @@ let theory : theory D.decoder =
 
 let accessor : accessor D.decoder =
   let* id = D.field "id" D.string in
-  let* declared_type = D.field "declared-type" (typeref_w) in
   let* type_ = D.field "type" (typeref_w) in
-  D.succeed { id; declared_type=[declared_type]; type_=[type_] }
+  D.succeed ({ id; type_=[type_] } : accessor)
 
 let constructor : constructor D.decoder =
   let* id = D.field "id" D.string in
@@ -483,7 +498,7 @@ let datatype : datatype D.decoder =
 let module_entry : module_entry D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
-  | "theory" -> theory >>= fun x -> D.succeed @@ Theory x
+  | "theory" -> theory expr >>= fun x -> D.succeed @@ Theory x
   | "datatype" -> datatype >>= fun x -> D.succeed @@ DataType x
   | s -> D.fail @@ "Unknown module entry tag " ^ s
 
@@ -497,7 +512,7 @@ let module_with_hash : module_with_hash D.decoder =
   in
   let* type_hash =
     D.one_of ([
-        "module_with_hash", D.field "type-hash" ( D.field "entries" type_db );
+        "module_with_hash", D.field "type-hash" ( D.field "entries" (type_db @@ Hashtbl.create 10) );
         (* "raw_def", D.succeed (Hashtbl.create 0)] *)])
   in
   D.succeed

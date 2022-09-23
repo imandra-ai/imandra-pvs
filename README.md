@@ -15,7 +15,6 @@ dune utop src/
 # Failing
 We currently fail on:
  - lack of `tag` for `{ "field": "stream", "place": [ 758, 12, 758, 19 ] }` in `"test/json-prelude-theories3/stdtokenizer.json"`
- - `"tag": "name-judgment"` - example `"test/json-prelude-theories3/finite_sets.json"` and `"test/json-prelude-theories3/real_props.json"` and `"test/json-prelude-theories3/sets_lemmas.json"`
  - `"tag": "auto-rewrite-decl"` - example `"test/json-prelude-theories3/sets.json"`
  - `"tag": "enumtype"` - example `"test/json-prelude-theories3/stdio.json"` and `"test/json-prelude-theories3/stdmath.json"`
  
@@ -29,6 +28,7 @@ Imandra_PVS.Load.Error
 
 # Working (moved from Failing)
 
+ - `"tag": "name-judgment"` - example `"test/json-prelude-theories3/finite_sets.json"` and `"test/json-prelude-theories3/real_props.json"` and `"test/json-prelude-theories3/sets_lemmas.json"`
  - `"tag": "getfield"` - example `"test/json-prelude-theories3/finite_sequences.json"` and `"test/json-prelude-theories3/list2finseq.json"` and `"test/json-prelude-theories3/more_finseq.json"` and `"test/json-prelude-theories3/PartialFunctionComposition.json"`
  - `"tag": "update"` - example `"test/json-prelude-theories3/bv_arithmetic_defs.json"`
  - `"tag": "conversion-decl"` - example `"test/json-prelude-theories3/bv_nat.json"` and `"test/json-prelude-theories3/bv.json"` and `"test/json-prelude-theories3/ctlops.json"` and `"test/json-prelude-theories3/extend_bool.json"` and `"test/json-prelude-theories3/Fairctlops.json"`

@@ -41,6 +41,16 @@ type expr =
   | Project of project
   | Tuple of tuple
   | Getfield of getfield
+  | Record of record
+
+and record = {
+  assignments: rec_row list;
+}
+
+and rec_row = {
+  field: string;
+  expr: expr;
+}
 
 and getfield = {
   argument: expr;
@@ -136,7 +146,6 @@ type const_decl = {
 }
 
 type var_decl = {
-  declared_type : typeref list;
   id : string;
   type_ : typeref;
 }
@@ -164,7 +173,6 @@ type type_decl = {
 
 type application_judgement = {
   id: string;
-  declared_type: typeref list;
   type_: typeref list;
   name: expr;
   formals: expr list list;
@@ -173,15 +181,29 @@ type application_judgement = {
 
 type subtype_judgement = {
   id: string;
-  declared_type: typeref;
   type_: typeref;
-  declared_subtype: typeref;
   subtype: typeref;
 }
 
 type conversion_decl = {
   id: string;
   expr: expr;
+}
+
+type name_judgement = {
+  id: string;
+  name: expr;
+  types: typeref list;
+}
+
+type auto_rewrite_decl = {
+  rewrite_names: rewrite_name list;
+}
+
+and rewrite_name = {
+  id: string;
+  theory: string;
+  actuals: actual list;
 }
 
 type declaration =
@@ -191,8 +213,10 @@ type declaration =
   | TypeDecl of type_decl
   | TypeEqDecl of type_eq_decl
   | ConversionDecl of conversion_decl
+  | AutoRewriteDecl of auto_rewrite_decl
   | ApplicationJudgement of application_judgement
   | SubtypeJudgement of subtype_judgement
+  | NameJudgement of name_judgement
 
 type formal_type_decl = { id : string; theory : string }
 
@@ -205,7 +229,6 @@ type theory = {
 
 type accessor = {
   id: string;
-  declared_type : typeref list;
   type_: typeref list;
 }
 
@@ -346,10 +369,10 @@ let rec pp_expr fmt e =
     F.fprintf fmt "@[%a WITH [%a]@]"
       pp_expr u.expr F.(list pp_assignment) u.assignments
   | Forall {bindings; expression} ->
-    F.fprintf fmt "@[@[∀%a@](@[%a@])@]"
+    F.fprintf fmt "@[@[∀%a@].(@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
   | Exists {bindings; expression} ->
-    F.fprintf fmt "@[@[∃%a@](@[%a@])@]"
+    F.fprintf fmt "@[@[∃%a@].(@[%a@])@]"
       F.(list pp_var) bindings pp_expr expression
   | Project {argument; index} ->
     F.fprintf fmt "@[Proj_{%d}(%a)@]"
@@ -361,6 +384,13 @@ let rec pp_expr fmt e =
     F.fprintf fmt "@[Getfield(%a, %s)@]"
       pp_expr argument
       field
+  | Record {assignments} ->
+    F.fprintf fmt "@[Record{%a}]"
+      F.(list pp_rec_row) assignments
+
+and pp_rec_row fmt a =
+  F.fprintf fmt "@[%s = %a]"
+    a.field pp_expr a.expr
 
 and pp_type_db_entry fmt (t:type_db_entry) =
   match t with
@@ -528,7 +558,7 @@ let pp_subtype_judgement fmt (d:subtype_judgement) =
   F.fprintf fmt "@[SubtypeJudgement %s =@ %a SUBTYPE_OF %a @]"
     d.id
     pp_typeref d.subtype
-    pp_typeref d.declared_type
+    pp_typeref d.type_
 
 let pp_decl fmt d =
   match d with
@@ -548,6 +578,10 @@ let pp_decl fmt d =
     pp_application_judgement fmt d
   | SubtypeJudgement d ->
     pp_subtype_judgement fmt d
+  | NameJudgement _j ->
+    F.fprintf fmt "<NameJudgement>"
+  | AutoRewriteDecl _ ->
+    F.fprintf fmt "<AutoRewriteDecl>"
 
 let rec pp_theory fmt (t:theory) =
   F.fprintf fmt "@[@[@{<Green>Theory@} %s [%a]@] =@\nBegin @[%a@]@\nEnd.@]@\n"
@@ -576,7 +610,7 @@ and pp_constructors fmt (c:constructor) =
 and pp_accessor fmt (a:accessor) =
   F.fprintf fmt "@[%s : (%a)@]"
     a.id
-    F.(list string) a.declared_type
+    F.(list string) a.type_
 
 let pp_entry fmt = function
   | Theory d -> pp_theory fmt d
