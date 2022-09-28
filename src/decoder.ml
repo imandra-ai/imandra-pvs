@@ -444,6 +444,22 @@ let name_judgement expr : name_judgement D.decoder =
       name: expr;
     } : name_judgement)
 
+let auto_rewrite_decl expr : auto_rewrite_decl D.decoder =
+  let rewrite_name =
+    let* id = D.field "id" D.string in
+    let* theory = D.field "theory" D.string in
+    let* actuals = D.field "actuals" (D.list @@ actual_ expr) in
+    D.succeed ({
+        id: string;
+        theory;
+        actuals;
+      } : rewrite_name)
+  in
+  let* rewrite_names = D.list rewrite_name in
+  D.succeed ({
+      rewrite_names;
+    } : auto_rewrite_decl)
+
 let declaration expr : declaration D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
@@ -453,6 +469,7 @@ let declaration expr : declaration D.decoder =
   | "type-eq-decl" -> type_eq_decl >>= fun x -> D.succeed @@ TypeEqDecl x
   | "type-decl" -> type_decl >>= fun x -> D.succeed @@ TypeDecl x
   | "conversion-decl" -> conversion_decl expr >>= fun x -> D.succeed @@ ConversionDecl x
+  | "auto-rewrite-decl" -> auto_rewrite_decl expr >>= fun x -> D.succeed @@ AutoRewriteDecl x
   | "application-judgement" -> application_judgement >>= fun x -> D.succeed @@ ApplicationJudgement x
   | "subtype-judgement" -> subtype_judgement >>= fun x -> D.succeed @@ SubtypeJudgement x
   | "name-judgement" -> name_judgement expr >>= fun x -> D.succeed @@ NameJudgement x

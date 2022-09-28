@@ -375,10 +375,10 @@ let rec pp_expr ~db fmt e =
     F.fprintf fmt "@[%a WITH [%a]@]"
       pp_expr u.expr F.(list @@ pp_assignment ~db) u.assignments
   | Forall {bindings; expression} ->
-    F.fprintf fmt "@[@[∀%a@].(@[%a@])@]"
+    F.fprintf fmt "@[@[∀%a@].@[(@[%a@])@]@]"
       F.(list (pp_var)) bindings pp_expr expression
   | Exists {bindings; expression} ->
-    F.fprintf fmt "@[@[∃%a@].(@[%a@])@]"
+    F.fprintf fmt "@[@[∃%a@].@[(@[%a@])@]@]"
       F.(list (pp_var_typed ~db)) bindings pp_expr expression
   | Project {argument; index} ->
     F.fprintf fmt "@[Proj_{%d}(%a)@]"
@@ -405,7 +405,7 @@ and pp_rec_row ~db fmt a =
   F.fprintf fmt "@[%s = %a@]"
     a.field (pp_expr ~db) a.expr
 
-and cfg_resolve_types = ref true
+and cfg_resolve_types = ref false
 
 and pp_type_db_entry ~db fmt t =
   let pp_type_db_entry = pp_type_db_entry ~db in
@@ -436,10 +436,18 @@ and pp_type_db_entry ~db fmt t =
       F.(list ~sep:(return "@ *@ ") pp_type_db_entry) t.types
   | Resolved (TypeName t) ->
     F.string fmt t.id
-  | Resolved (DepBinding _) ->
-    F.fprintf fmt "<DepBinding>"
-  | Resolved (RecordType _) ->
-    F.fprintf fmt "<RecordType>"
+  | Resolved (DepBinding {id;type_}) ->
+    F.fprintf fmt "@[DepBinding(id=%s, type=%a)@]"
+      id
+      pp_type_db_entry type_
+  | Resolved (RecordType {fields}) ->
+    F.fprintf fmt "@\n@ RecordType@[{@[%a@]}@]"
+      F.(list @@ pp_rec_field ~db) fields
+
+and pp_rec_field ~db fmt f =
+  F.fprintf fmt "%s : %a"
+    f.id
+    (pp_type_db_entry ~db) f.type_
 
 and pp_type_db_entry_opt ~db fmt e =
   match e with
@@ -464,7 +472,7 @@ and pp_actual ~db fmt a =
   | ConstActual c ->
     pp_expr ~db fmt c.expr
   | TypeActual _t ->
-    F.string fmt ""
+    F.string fmt "<typeActual>"
     (* F.string fmt t.type_ *)
 
 and pp_assignment ~db fmt (a:assignment) =
@@ -588,29 +596,29 @@ and resolve_ty_aux (db:type_db) (ty:ty) =
   | x -> x
 
 let pp_formula_decl ~db fmt (d:formula_decl) =
-  F.fprintf fmt "@[Formula %s (%s) =@\n@ @[%a@]@]"
+  F.fprintf fmt "@[Formula %s (%s) =@\n@ @[%a@]@]@\n"
     d.id
     d.label
     F.(list (pp_expr ~db)) d.definition
 
 let pp_const_decl ~db fmt (d:const_decl) =
-  F.fprintf fmt "@[Const %s : %a@ @\n@ = @[%a@]@]"
+  F.fprintf fmt "@[Const %s : %a@ @ = @[%a@]@]@\n"
     d.id
     (pp_type_db_entry ~db) d.type_
     (pp_expr_opt ~db) d.const_def
 
 let pp_var_decl ~db fmt (d:var_decl) =
-  F.fprintf fmt "@[Var %s : %a@]"
+  F.fprintf fmt "@[Var %s : %a@]@\n"
     d.id
     (pp_type_db_entry ~db) d.type_
 
 let pp_type_eq_decl ~db fmt (d:type_eq_decl) =
-  F.fprintf fmt "@[TypeEq %s : %a@]"
+  F.fprintf fmt "@[TypeEq %s = %a@]@\n"
     d.name
     (pp_type_db_entry ~db) d.type_
 
 let pp_type_decl fmt (d:type_decl) =
-  F.fprintf fmt "@[Type %s @]"
+  F.fprintf fmt "@[Type %s @]@\n"
     d.name
 
 let pp_conversion_decl ~db fmt (d:conversion_decl) =
@@ -624,7 +632,7 @@ let pp_application_judgement ~db fmt (d:application_judgement) =
     (pp_expr ~db) d.name
 
 let pp_subtype_judgement ~db fmt (d:subtype_judgement) =
-  F.fprintf fmt "@[SubtypeJudgement %s =@\n @[@[%a@]@\n SUBTYPE_OF@\n@[%a@]@]@]"
+  F.fprintf fmt "@[SubtypeJudgement %s =@\n @[@[%a@]@\n SUBTYPE_OF@\n@[%a@]@]@]@\n"
     d.id
     (pp_type_db_entry ~db) d.type_
     (pp_type_db_entry ~db) d.subtype
@@ -690,7 +698,8 @@ let pp_module ~db fmt m =
     F.(list ~sep:(return "@\n") (pp_entry ~db)) m
 
 let pp_type_db fmt (db:type_db) =
-  F.fprintf fmt "\n@[Type DB:@\n@\n@[%a@]@]@."
+  F.fprintf fmt "\n@[Type DB%s:@\n@\n@[%a@]@]@."
+    (if !cfg_resolve_types then " (resolved)" else "")
     F.(list ~sep:(return "@\n") @@ pair string (pp_type_db_entry ~db))
     (CCList.uniq ~eq:(=) @@ List.of_seq @@ Hashtbl.to_seq db)
 
