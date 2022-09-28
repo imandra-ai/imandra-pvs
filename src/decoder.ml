@@ -17,13 +17,13 @@ let tag : string D.decoder =
     )
   ]
 
-let typeref : typeref D.decoder = D.string
+let typeref : typeref D.decoder = D.string >>= fun x -> D.succeed (Ref x)
 
 let typeref_w : typeref D.decoder =
   D.one_of
-    [ ("flat int typeref", D.string)
-    ; ("typeref in dict", D.field "typehash" D.string)
-    ; ("int typeref in dict", D.field "typehash" D.int >>= fun x -> D.succeed @@ string_of_int x)
+    [ ("flat int typeref", D.string >>= fun x -> D.succeed @@ Ref x)
+    ; ("typeref in dict", D.field "typehash" D.string >>= fun x -> D.succeed @@ Ref x)
+    ; ("int typeref in dict", D.field "typehash" D.int >>= fun x -> D.succeed @@ Ref (string_of_int x))
     ]
 
 let type_actual : type_actual D.decoder =
@@ -215,14 +215,14 @@ let getfield expr : getfield D.decoder =
 
 let rec_row expr : rec_row D.decoder =
   let* expr = D.field "expr" expr in
-  let* field = D.field "field" D.string in
+  let* field = D.field "arguments" (D.index 0 (D.index 0 (D.field "field" D.string))) in
   D.succeed ({
       expr;
       field;
     } : rec_row)
 
 let assignments expr : record D.decoder =
-  let* assignments = D.list (rec_row expr) in
+  let* assignments = D.field "assignments" @@ D.index 0 @@ D.list (rec_row expr) in
   D.succeed ({assignments} : record)
 
 let expr : expr D.decoder =
@@ -278,6 +278,9 @@ let expr : expr D.decoder =
     let* getfield = getfield expr in
     D.succeed @@ Getfield getfield
   | "record" ->
+    (* D.fail "unsupported record" *)
+    (* To see weird record encoding with nested lists, enable the above D.fail and then
+       try decoding "test/json-prelude-theories4/PartialFunctionDefinitions.json" *)
     let* assignments = assignments expr in
     D.succeed @@ Record assignments
   | s -> D.fail @@ "Unknown expression tag '" ^ s ^ "'"
@@ -314,13 +317,16 @@ let tupletype : tupletype D.decoder =
 let recordtype : record_type D.decoder =
   let field : field D.decoder =
     let* id = D.field "id" D.string in
-    let* type_ = D.field "typehash" D.string in
-    D.succeed { id; type_ }
+    let* type_ = D.field "type" typeref_w in
+    D.succeed ({
+        id;
+        type_;
+      } : field)
   in
   let* fields = D.field "fields" (D.list field) in
   D.succeed { fields }
 
-let typelist_entry : type_db_entry D.decoder =
+let typelist_entry : ty D.decoder =
   let* tag = D.field "tag" tag in
   match tag with
   | "subtype" -> subtype >>= fun x -> D.succeed @@ SubType x
@@ -332,11 +338,12 @@ let typelist_entry : type_db_entry D.decoder =
     D.field "type" typeref_w >>= fun type_ ->
     D.succeed @@ DepBinding { id ; type_}
   | "recordtype" -> recordtype >>= fun x -> D.succeed @@ RecordType x
+  (*  | "enumtype" -> enumtype >>= fun x -> D.succeed @@ EnumType x *)
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
 let type_db (ht : type_db) : type_db D.decoder =
   let* kvs = D.key_value_pairs typelist_entry in
-  let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add ht k v in
+  let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add ht k (Resolved v) in
   D.succeed ht
 
 let const_decl : const_decl D.decoder =

@@ -9,5 +9,5 @@
 
 (env
  (_
-  (flags -w +a-4-40-41-42-44-48 -warn-error -a+5+8 -strict-sequence
+  (flags -w +a-4-40-41-42-44-48-30 -warn-error -a+5+8 -strict-sequence
          -safe-string)))
