@@ -310,7 +310,7 @@ let rec pp_expr ~db fmt e =
   | Lambda l ->
     let bs = l.bindings in
     let e = l.expression in
-    F.fprintf fmt "@[@[λ%a@].@[%a@]@]"
+    F.fprintf fmt "@[@[λ%a@].@[(@[%a@])@]@]"
       F.(list (pp_var)) bs
       pp_expr e
   | Let {bindings; body} ->
@@ -406,6 +406,7 @@ and pp_rec_row ~db fmt a =
     a.field (pp_expr ~db) a.expr
 
 and cfg_resolve_types = ref false
+and cfg_full_id_paths = ref false
 
 and pp_type_db_entry ~db fmt t =
   let pp_type_db_entry = pp_type_db_entry ~db in
@@ -465,7 +466,11 @@ and pp_const ~db fmt c =
     F.fprintf fmt "@[%s[%a]@]"
       c.id F.(list @@ pp_actual ~db) xs
   | _ ->
-    F.string fmt c.id
+    if !cfg_full_id_paths then (
+      F.fprintf fmt "%s.%s" c.theory c.id
+    ) else (
+      F.string fmt c.id
+    )
 
 and pp_actual ~db fmt a =
   match a with
@@ -487,42 +492,57 @@ and pp_let_binding ~db fmt (b:let_binding) =
 
 and op_is_eq operator =
   match operator with
-  | Constant c -> c.id = "="
+  | Constant c ->
+    c.theory = "equalities"
+    && c.id = "="
   | _ -> false
 
 and op_is_not operator =
   match operator with
-  | Constant c -> c.id = "NOT"
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "NOT"
   | _ -> false
 
 and op_is_neq operator =
   match operator with
-  | Constant c -> c.id = "/="
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "/="
   | _ -> false
 
 and op_is_or operator =
   match operator with
-  | Constant c -> c.id = "OR"
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "OR"
   | _ -> false
 
 and op_is_and operator =
   match operator with
-  | Constant c -> c.id = "AND"
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "AND"
   | _ -> false
 
 and op_is_implies operator =
   match operator with
-  | Constant c -> c.id = "IMPLIES"
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "IMPLIES"
   | _ -> false
 
 and op_is_iff operator =
   match operator with
-  | Constant c -> c.id = "IFF"
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "IFF"
   | _ -> false
 
 and op_is_plus operator =
   match operator with
-  | Constant c -> c.id = "+"
+  | Constant c ->
+    c.id = "+"
   | _ -> false
 
 and op_is_times operator =
@@ -622,12 +642,12 @@ let pp_type_decl fmt (d:type_decl) =
     d.name
 
 let pp_conversion_decl ~db fmt (d:conversion_decl) =
-  F.fprintf fmt "@[Conversion %s = %a@]"
+  F.fprintf fmt "@[Conversion %s = %a@]@\n"
     d.id
     (pp_expr ~db) d.expr
 
 let pp_application_judgement ~db fmt (d:application_judgement) =
-  F.fprintf fmt "@[Judgement %s %a @]"
+  F.fprintf fmt "@[Judgement (%s) (%a) @]@\n"
     d.id
     (pp_expr ~db) d.name
 
@@ -661,7 +681,7 @@ let pp_decl ~db fmt d =
     F.fprintf fmt "<AutoRewriteDecl>"
 
 let rec pp_theory ~db fmt (t:theory) =
-  F.fprintf fmt "@[@[@{<Green>Theory@} %s [%a]@] =@\nBegin @[%a@]@\nEnd.@]@\n"
+  F.fprintf fmt "@[@[@{<Green>Theory@} %s [@[%a@]]@] =@\nBegin @[%a@]@\nEnd.@]@\n"
     t.id
     F.(list pp_formal_type_decl) t.formals
     F.(list ~sep:(return "@\n") (pp_decl ~db)) t.declarations
@@ -676,7 +696,13 @@ and pp_datatype ~db fmt (d:datatype) =
     F.(list ~sep:(return "@\n| ") (pp_constructors ~db)) d.constructors
 
 and pp_formal_type_decl fmt (d:formal_type_decl) =
-  F.fprintf fmt "@[%s@]" d.id
+  if !cfg_full_id_paths then (
+    F.fprintf fmt "@[%s.%s@]"
+      d.theory
+      d.id
+  ) else (
+    F.fprintf fmt "@[%s@]" d.id
+  )
 
 and pp_constructors ~db fmt (c:constructor) =
   F.fprintf fmt "@[%s@ @[(@[%a@])@ (@[%s@])@]@]"
