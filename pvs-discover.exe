@@ -1,0 +1,3 @@
+#!/bin/bash
+
+imandra < test/rsa_run.iml

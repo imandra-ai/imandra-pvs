@@ -93,8 +93,10 @@ let formal_constant: formal_constant D.decoder =
 let arguments_ (expr : expr D.decoder) =
   D.one_of
     [ ("tuple_exprs",
-         (
-           let* args = D.field "exprs" (D.list expr) in
+       (
+          (* TODO: Speak to Sam about this need for `D.index 0` below;
+             it might be a bug in the JSON generation. *)
+           let* args = D.field "exprs" @@ D.list expr in
            D.succeed args
          )
       );
@@ -296,7 +298,7 @@ let subtype : subtype D.decoder =
   ; predicate : expr option
   }
 
-let functiontype : functiontype D.decoder =
+let functiontype _ty : functiontype D.decoder =
   let* domain = D.field "domain" typeref_w in
   let* range = D.field "range" typeref_w in
   D.succeed {
@@ -326,23 +328,37 @@ let recordtype : record_type D.decoder =
   let* fields = D.field "fields" (D.list field) in
   D.succeed { fields }
 
+let dep_binding : dep_binding D.decoder =
+  D.field "id" D.string >>= fun id ->
+  D.field "type" typeref_w >>= fun type_ ->
+  D.succeed @@ ({ id ; type_} : dep_binding)
+
+let dep_fun_type decode_ty : dep_function_type D.decoder =
+  let* domain = D.field "domain" dep_binding in
+  let* range = D.field "range" (D.list decode_ty) in
+  D.succeed ({ domain; range } : dep_function_type)
+
 let typelist_entry : ty D.decoder =
+  D.fix @@ fun ty ->
   let* tag = D.field "tag" tag in
   match tag with
   | "subtype" -> subtype >>= fun x -> D.succeed @@ SubType x
-  | "functiontype" -> functiontype >>= fun x -> D.succeed @@ FunctionType x
+  | "functiontype" -> functiontype ty >>= fun x -> D.succeed @@ FunctionType x
   | "tupletype" -> tupletype >>= fun x -> D.succeed @@ TupleType x
   | "typename" -> D.field "id" D.string >>= fun id -> D.succeed @@ TypeName { id }
-  | "dep-binding" ->
-    D.field "id" D.string >>= fun id ->
-    D.field "type" typeref_w >>= fun type_ ->
-    D.succeed @@ DepBinding { id ; type_}
+  | "dep-binding" -> dep_binding >>= fun x -> D.succeed @@ DepBinding x
   | "recordtype" -> recordtype >>= fun x -> D.succeed @@ RecordType x
+  | "dependent-tupletype" ->
+    (* TODO: Ignoring for now; needs some recursion refactoring *)
+    (* D.field "types" @@ D.list typeref_w >>= fun types -> *)
+    D.succeed @@ DepTupleType { types=[] }
+  | "dependent-functiontype" ->
+    dep_fun_type ty >>= fun x -> D.succeed @@ DepFunctionType x
   (*  | "enumtype" -> enumtype >>= fun x -> D.succeed @@ EnumType x *)
   | s -> D.fail @@ "Unknown typelist entry tag " ^ s
 
 let type_db (ht : type_db) : type_db D.decoder =
-  let* kvs = D.key_value_pairs typelist_entry in
+  let* kvs = D.key_value_pairs (typelist_entry) in
   let () = kvs |> List.iter @@ fun (k,v) -> Hashtbl.add ht k (Resolved v) in
   D.succeed ht
 
@@ -353,12 +369,41 @@ let const_decl : const_decl D.decoder =
      Thus, we use `D.field_opt` which is more forceful than just using `D.maybe expr.` *)
   let* const_def = D.field_opt "const-def" expr in
   let* theory = D.field "theory" D.string in
+  let* parameters = D.field "parameters" @@ D.maybe @@ D.index 0 @@ D.list expr in
+  let params = match parameters with
+    | None -> []
+    | Some ps -> ps
+  in
   D.succeed ({
     id;
     type_;
     const_def;
     theory;
+    parameters=params;
+    recursive=false;
   } : const_decl)
+
+let rec_func_decl : const_decl D.decoder =
+  let* id = D.field "id" D.string in
+  let* type_ = D.field "type" typeref_w in
+  (* A constant may not be defined. But if it is, the definition better parse!
+     Thus, we use `D.field_opt` which is more forceful than just using `D.maybe expr.` *)
+  let* const_def = D.field "recursive-def" expr in
+  let* theory = D.field "theory" D.string in
+  let* parameters = D.field "parameters" @@ D.maybe @@ D.index 0 @@ D.list expr in
+  let params = match parameters with
+    | None -> []
+    | Some ps -> ps
+  in
+  D.succeed ({
+      id;
+      type_;
+      const_def=Some const_def;
+      theory;
+      parameters=params;
+      recursive=true;
+    } : const_decl)
+
 
 let var_decl : var_decl D.decoder =
   let* id = D.field "id" D.string in
@@ -412,13 +457,13 @@ let conversion_decl expr : conversion_decl D.decoder =
 
 let application_judgement : application_judgement D.decoder =
   let* id = D.field "id" D.string in
-  let* type_ = D.field "type" ( D.list typeref_w ) in
+  let* ty = D.field "type" ( typeref_w ) in
   let* name = D.field "name" expr in
   let* formals = D.field "formals" (list_or_null @@ D.list @@ expr) in
   let* judgement_type = D.field "judgement-type" ( D.list typeref_w ) in
   D.succeed ({
     id: string;
-    type_: typeref list;
+    type_=([ty] : typeref list);
     name: expr;
     formals: expr list list;
     judgement_type: typeref list;
@@ -436,11 +481,11 @@ let subtype_judgement : subtype_judgement D.decoder =
 
 let name_judgement expr : name_judgement D.decoder =
   let* id = D.field "id" D.string in
-  let* types = D.field "type" (D.list typeref_w) in
+  let* types = D.field "type" (typeref_w) in
   let* name = D.field "name" expr in
   D.succeed ({
       id: string;
-      types;
+      types = [types];
       name: expr;
     } : name_judgement)
 
@@ -466,6 +511,7 @@ let declaration expr : declaration D.decoder =
   | "formula-decl" -> formula_decl >>= fun x -> D.succeed @@ FormulaDecl x
   | "var-decl" -> var_decl >>= fun x -> D.succeed @@ VarDecl x
   | "const-decl" -> const_decl >>= fun x -> D.succeed @@ ConstDecl x
+  | "recursive-func-decl" -> rec_func_decl >>= fun x -> D.succeed @@ ConstDecl x
   | "type-eq-decl" -> type_eq_decl >>= fun x -> D.succeed @@ TypeEqDecl x
   | "type-decl" -> type_decl >>= fun x -> D.succeed @@ TypeDecl x
   | "conversion-decl" -> conversion_decl expr >>= fun x -> D.succeed @@ ConversionDecl x
@@ -481,7 +527,7 @@ let formal_type_decl : formal_type_decl D.decoder =
   D.succeed ({ id; theory } : formal_type_decl)
 
 let theory expr : theory D.decoder =
-  let* declarations = D.field "declarations" ( D.list (declaration expr) ) in
+  let* declarations = D.field "declarations" (D.list (declaration expr)) in
   let* id = D.field "id" D.string in
   let* formals = D.maybe @@ D.field "formals"  (list_or_null formal_type_decl) in
   D.succeed
@@ -526,20 +572,13 @@ let module_entry : module_entry D.decoder =
   | "datatype" -> datatype >>= fun x -> D.succeed @@ DataType x
   | s -> D.fail @@ "Unknown module entry tag " ^ s
 
-
 let module_with_hash : module_with_hash D.decoder =
-  let* module_ =
-    D.one_of ([
-      (* "module_in_a_list", D.field "module" (D.list module_entry); *)
-      "module_direct", (D.field "module" module_entry) >>= fun x -> D.succeed [x];
-    ])
-  in
+  let* module_ = (D.field "module" module_entry) >>= fun x -> D.succeed [x] in
+  let empty = Hashtbl.create 10 in
   let* type_hash =
-    D.one_of ([
-        "module_with_hash", D.field "type-hash" ( D.field "entries" (type_db @@ Hashtbl.create 10) );
-        (* "raw_def", D.succeed (Hashtbl.create 0)] *)])
+    D.maybe @@ D.field "type-hash" (D.field "entries" (type_db @@ empty))
   in
   D.succeed
   { module_
-  ; type_hash
+  ; type_hash=empty
   }

@@ -1,0 +1,61 @@
+(* Bitvector Discover example with external opaque Bitvector library *)
+
+[@@@require "bitv"];;
+
+module BVFast = struct
+
+  type t = int
+
+  let of_int n =
+    Bitv.of_int64_us (Z.to_int64 n)
+  [@@program]
+
+  let to_int n =
+    Z.of_int (Bitv.to_int_us n)
+  [@@program]
+
+  (* Opaque wrappers around external functions *)
+
+  let length x : int =
+    Z.of_int @@ (Bitv.length (of_int x))
+  [@@opaque]
+
+  let append x y : t =
+    to_int (Bitv.append (of_int x) (of_int y))
+  [@@opaque]
+
+  let copy x =
+    to_int (Bitv.copy (of_int x))
+  [@@opaque]
+
+  let bw_and x y =
+    to_int (Bitv.bw_and (of_int x) (of_int y))
+  [@@opaque]
+
+  let bw_or x y =
+    to_int (Bitv.bw_or (of_int x) (of_int y))
+  [@@opaque]
+
+  let bw_not x =
+    to_int (Bitv.bw_not (of_int x))
+  [@@opaque]
+
+  let rotatel x n =
+    to_int (Bitv.rotatel (of_int x) (Z.to_int n))
+  [@@opaque]
+
+  let rotater x n =
+    to_int (Bitv.rotater (of_int x) (Z.to_int n))
+  [@@opaque]
+
+end
+;;
+
+#require "imandra-discover-bridge";;
+open Imandra_discover_bridge.User_level;;
+
+discover ~bounded_verification:false ~subsumed:false db
+  ["BVFast.bw_and"; "BVFast.bw_or"; "BVFast.bw_not"];;
+
+discover ~bounded_verification:false ~subsumed:false db
+  ["BVFast.rotatel"; "BVFast.rotater"; "BVFast.length"];;

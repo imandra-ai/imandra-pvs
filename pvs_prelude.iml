@@ -1,0 +1,11 @@
+ module List = struct
+
+  type 't list =
+  | Null
+  | Cons of ('t * ('t) list)
+
+  let car = List.hd
+
+  let cdr = List.tl
+
+end;;

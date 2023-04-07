@@ -1,0 +1,76 @@
+[@@@skip_proofs true]
+[@@@redef true]
+
+type nat = Z | S of nat
+
+let zero = Z
+
+let one = S Z
+
+let two = S one
+
+let sub1 x = match x with Z -> Z | S n -> n
+
+let member = List.mem
+
+let rec plus x y =
+  match x with
+  | Z -> y
+  | S n -> S (plus n y)
+;;
+
+let (++) = plus
+;;
+
+let rec times x y =
+  match x with
+  | Z -> Z
+  | S n -> plus y (times n y)
+;;
+
+let ( ** ) = times
+;;
+
+let rec lessp x y =
+  match x, y with
+  | _, Z -> false
+  | Z, _ -> true
+  | S n, S m -> lessp n m
+;;
+
+let (<) = lessp
+;;
+
+let (<=) x y = x < y || x = y
+
+let (>) x y = y < x
+
+let (>=) x y = y <= x
+
+let rec difference x y =
+  match x,y with
+  | Z, _     -> Z
+  | _, Z     -> x
+  | S n, S m -> difference n m
+;;
+
+let (--) = difference
+;;
+
+let rec quotient i j =
+  if j = Z then Z
+  else if lessp i j then Z
+  else S (quotient (difference i j) j)
+[@@no_validate]
+
+let (/) = quotient
+
+let rec remainder i j =
+  if j = Z then i
+  else if lessp i j then i
+  else remainder (difference i j) j
+[@@no_validate]
+
+let rem = remainder
+
+let divides x y = rem y x = zero
