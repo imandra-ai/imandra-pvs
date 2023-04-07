@@ -3,3 +3,4 @@ src/.imandra_init.log
 _opam/
 .#*
 .imandra_init.log
+.DS_Store
