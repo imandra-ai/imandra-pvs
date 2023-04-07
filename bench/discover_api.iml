@@ -1,0 +1,4 @@
+#require "imandra-discover-bridge";;
+open Imandra_discover_bridge.User_level;;
+
+let discover = discover ~bounded_verification:false ~subsumed:false db [@@program];;

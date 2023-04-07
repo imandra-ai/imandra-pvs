@@ -1,0 +1,7 @@
+[@@@require "imandra-discover-bridge"]
+
+open Imandra_discover_bridge.User_level;;
+
+let assume_nat n = n >= 0;;
+
+discover ~iterations:1i ~condition:"assume_nat" db ["+"];;

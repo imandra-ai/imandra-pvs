@@ -1,0 +1,109 @@
+[@@@redef]
+
+(* Imandra<->PVS Discover Prelude *)
+
+[@@@use "test/imandra-pvs-prelude.iml"];;
+
+(* Definitions imported from PVS JSON theory *)
+
+let rec prime_aux n m
+  = (if (m = zero) then false else (if (m = one) then true else (not ((divides m n))
+                                                                 &&
+                                                                 (prime_aux n (sub1 m)))))
+[@@no_validate]
+;;
+
+let prime n = (if ((n = zero) || (n = one)) then false else (prime_aux n (sub1 n)))
+;;
+
+let rec even n =
+   (if (n = zero) then true else (if (n = one) then false else (even (sub1 (sub1 n)))))
+[@@no_validate]
+;;
+
+let square n = (n ** n)
+;;
+
+let rec crypt m e n
+  = (if (e = zero) then one else (if (even e) then ((rem
+                                                        (square (crypt m (e / two) n)))
+                                                       n) else ((rem
+                                                                   (m **
+                                                                    ((rem
+                                                                        (square
+                                                                           (crypt m (e / two) n)))
+                                                                       n)))
+                                                                  n)))
+[@@no_validate]
+;;
+
+let rec expt b p = (if (p = zero) then one else (b ** (expt b (sub1 p))))
+[@@no_validate]
+;;
+
+let pdiff n m = (if (n < m) then (m -- n) else (n -- m))
+;;
+
+let rec delete x xs
+  = (match xs with
+      | [] -> []
+      | hd :: tl -> (if (hd = x) then tl else (hd :: (delete x tl))))
+;;
+
+let rec perm xs ys
+  = (match xs with
+      | [] -> (ys = [])
+      | hd :: tl -> (if (member hd ys) then (perm xs (delete hd ys)) else false))
+[@@no_validate]
+;;
+
+let rec all_distinct xs
+  = (match xs with
+      | [] -> true
+      | hd :: tl -> (not ((member hd tl)) && (all_distinct tl)))
+;;
+
+let rec all_lesseqp xs n
+  = (match xs with
+      | [] -> true
+      | hd :: tl -> ((hd <= n) && (all_lesseqp tl n)))
+;;
+
+let rec all_non_zerop xs
+  = (match xs with
+      | [] -> true
+      | hd :: tl -> ((hd > zero) && (all_non_zerop tl)))
+;;
+
+let rec positives n = (if (n = zero) then [] else (n :: (positives (sub1 n))))
+[@@no_validate]
+;;
+
+let rec factorial n = (if (n = zero) then one else (n ** (factorial (sub1 n))))
+[@@no_validate]
+;;
+
+let rec s n m p
+  = (if (n = zero) then [] else (((rem (m ** n)) p) :: (s (sub1 n) m p)))
+[@@no_validate]
+;;
+
+[@@@max_induct 1]
+;;
+
+[@@@induct_unroll 1]
+;;
+
+[@@@unroll 5]
+;;
+
+[@@@require "imandra-discover-bridge"]
+;;
+
+open Imandra_discover_bridge.User_level;;
+
+discover ~iterations:2i db ["zero"; "one"; "expt"; "rem"; "crypt";];;
+
+discover ~iterations:2i db ["rem"; "times"; "divides"];;
+
+discover ~constructor_functions:false ~iterations:2i db ["zero"; "one"; "rem"; "pdiff"];;

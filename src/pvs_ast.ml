@@ -1,5 +1,12 @@
 (* Imandra<->PVS: PVS AST represented in Imandra *)
 
+module Config = struct
+
+  let resolve_types = ref true
+  let full_id_paths = ref false
+
+end
+
 type typeref =
   | Ref of string
   | Resolved of ty
@@ -10,7 +17,18 @@ and ty =
   | TupleType of tupletype
   | TypeName of typename
   | DepBinding of dep_binding
+  | DepTupleType of dep_tuple_type
   | RecordType of record_type
+  | DepFunctionType of dep_function_type
+
+and dep_function_type = {
+  domain: dep_binding;
+  range: ty list;
+}
+
+and dep_tuple_type = {
+  types: typeref list;
+}
 
 and accessor = {
     id: string;
@@ -202,10 +220,12 @@ and assignment = {
 }
 
 type const_decl = {
-  id  : string;
-  type_ : typeref;
-  const_def : expr option;
-  theory : string;
+  id : string;
+  type_: typeref;
+  const_def: expr option;
+  theory: string;
+  parameters: expr list;
+  recursive: bool;
 }
 
 type var_decl = {
@@ -305,6 +325,10 @@ let rec pp_expr ~db fmt e =
   let pp_expr = pp_expr ~db in
   match e with
   | Variable v -> pp_var fmt v
+  | Constant _ when op_is_true e ->
+    F.fprintf fmt "@[true@]"
+  | Constant _ when op_is_false e ->
+    F.fprintf fmt "@[false@]"
   | Constant c -> pp_const ~db fmt c
   | FormalConstant c -> F.string fmt c.constant_name
   | Lambda l ->
@@ -324,7 +348,7 @@ let rec pp_expr ~db fmt e =
     F.fprintf fmt "@[(%a@ /=@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x]} when op_is_not operator ->
-    F.fprintf fmt "@[¬%a@]"
+    F.fprintf fmt "@[¬(%a)@]"
       pp_expr x
   | Apply {operator; argument=[x;y]} when op_is_or operator ->
     F.fprintf fmt "@[(%a@ ∨@ %a)@]"
@@ -333,10 +357,10 @@ let rec pp_expr ~db fmt e =
     F.fprintf fmt "@[(%a@ ∧@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_implies operator ->
-    F.fprintf fmt "@[(%a@ =>@ %a)@]"
+    F.fprintf fmt "@[(%a@ ==>@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_iff operator ->
-    F.fprintf fmt "@[(%a@ <=>@ %a)@]"
+    F.fprintf fmt "@[(%a@ <==>@ %a)@]"
       pp_expr x pp_expr y
   | Apply {operator; argument=[x;y]} when op_is_plus operator ->
     F.fprintf fmt "@[(%a@ +@ %a)@]"
@@ -405,14 +429,11 @@ and pp_rec_row ~db fmt a =
   F.fprintf fmt "@[%s = %a@]"
     a.field (pp_expr ~db) a.expr
 
-and cfg_resolve_types = ref false
-and cfg_full_id_paths = ref false
-
 and pp_type_db_entry ~db fmt t =
   let pp_type_db_entry = pp_type_db_entry ~db in
   match t with
   | Ref s ->
-    if not !cfg_resolve_types then (
+    if not !Config.resolve_types then (
       F.fprintf fmt "ref %S" s
     ) else (
     (* We check to see if the target has been resolved in the Type DB.
@@ -426,11 +447,11 @@ and pp_type_db_entry ~db fmt t =
     end
   )
   | Resolved (SubType s) ->
-    F.fprintf fmt "@[{x:%a | %a x}@]"
+    F.fprintf fmt "@[{@[x@[:%a@ | %a x@]@]}@]"
       (pp_type_db_entry_opt ~db) s.supertype
       (pp_expr_opt ~db) s.predicate
   | Resolved (FunctionType f) ->
-    F.fprintf fmt "@[[%a@ ->@ %a]@]"
+    F.fprintf fmt "@[[@[%a@ ->@ %a@]]@]"
       pp_type_db_entry f.domain pp_type_db_entry f.range
   | Resolved (TupleType t) ->
     F.fprintf fmt "@[(%a)@]"
@@ -444,6 +465,10 @@ and pp_type_db_entry ~db fmt t =
   | Resolved (RecordType {fields}) ->
     F.fprintf fmt "@\n@ RecordType@[{@[%a@]}@]"
       F.(list @@ pp_rec_field ~db) fields
+  | Resolved (DepTupleType _) ->
+    F.fprintf fmt "@[<DepTupleType>@]"
+  | Resolved (DepFunctionType _) ->
+    F.fprintf fmt "@[<DepFunctionType>@]"
 
 and pp_rec_field ~db fmt f =
   F.fprintf fmt "%s : %a"
@@ -466,7 +491,7 @@ and pp_const ~db fmt c =
     F.fprintf fmt "@[%s[%a]@]"
       c.id F.(list @@ pp_actual ~db) xs
   | _ ->
-    if !cfg_full_id_paths then (
+    if !Config.full_id_paths then (
       F.fprintf fmt "%s.%s" c.theory c.id
     ) else (
       F.string fmt c.id
@@ -525,6 +550,20 @@ and op_is_and operator =
     && c.id = "AND"
   | _ -> false
 
+and op_is_true operator =
+  match operator with
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "TRUE"
+  | _ -> false
+
+and op_is_false operator =
+  match operator with
+  | Constant c ->
+    c.theory = "booleans"
+    && c.id = "FALSE"
+  | _ -> false
+
 and op_is_implies operator =
   match operator with
   | Constant c ->
@@ -563,6 +602,11 @@ and op_is_lt operator =
 and op_is_gt operator =
   match operator with
   | Constant c -> c.id = ">"
+  | _ -> false
+
+and op_eq_id operator id =
+  match operator with
+  | Constant c -> c.id = id
   | _ -> false
 
 and op_is_geq operator =
@@ -696,7 +740,7 @@ and pp_datatype ~db fmt (d:datatype) =
     F.(list ~sep:(return "@\n| ") (pp_constructors ~db)) d.constructors
 
 and pp_formal_type_decl fmt (d:formal_type_decl) =
-  if !cfg_full_id_paths then (
+  if !Config.full_id_paths then (
     F.fprintf fmt "@[%s.%s@]"
       d.theory
       d.id
@@ -725,9 +769,9 @@ let pp_module ~db fmt m =
 
 let pp_type_db fmt (db:type_db) =
   F.fprintf fmt "\n@[Type DB%s:@\n@\n@[%a@]@]@."
-    (if !cfg_resolve_types then " (resolved)" else "")
+    (if !Config.resolve_types then " (resolved)" else "")
     F.(list ~sep:(return "@\n") @@ pair string (pp_type_db_entry ~db))
-    (CCList.uniq ~eq:(=) @@ List.of_seq @@ Hashtbl.to_seq db)
+    (List.sort Stdlib.compare @@ CCList.uniq ~eq:(=) @@ List.of_seq @@ Hashtbl.to_seq db)
 
 let resolve_types (db:type_db) =
   let f k v =
